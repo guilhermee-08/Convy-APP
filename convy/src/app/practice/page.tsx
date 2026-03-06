@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { supabase } from "@/lib/supabase";
 
 const CONVERSATION_STEPS = [
     "Hello! What would you like to drink?",
@@ -28,6 +29,34 @@ export default function Practice() {
     const [inputValue, setInputValue] = useState("");
     const [feedbackData, setFeedbackData] = useState<FeedbackData>(null);
     const [isLoadingFeedback, setIsLoadingFeedback] = useState(false);
+    const [isPageLoading, setIsPageLoading] = useState(true);
+
+    // Initial limit check
+    useEffect(() => {
+        const verifyAccess = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session?.user) {
+                router.push("/login");
+                return;
+            }
+
+            const { data: profile } = await supabase
+                .from("profiles")
+                .select("is_premium, last_practice_date, practice_count_today")
+                .eq("id", session.user.id)
+                .single();
+
+            if (profile && !profile.is_premium) {
+                const today = new Date().toISOString().split("T")[0];
+                if (profile.last_practice_date === today && profile.practice_count_today >= 1) {
+                    router.push("/paywall");
+                    return;
+                }
+            }
+            setIsPageLoading(false);
+        };
+        verifyAccess();
+    }, [router]);
 
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -53,7 +82,6 @@ export default function Practice() {
                 setFeedbackData(data);
             } else {
                 console.error("Feedback error:", data.error);
-                // Simple fallback so the user can continue even if AI fails
                 setFeedbackData({
                     correction: userText,
                     natural: userText,
@@ -74,7 +102,7 @@ export default function Practice() {
         }
     };
 
-    const handleNextQuestion = () => {
+    const handleNextQuestion = async () => {
         if (currentStep < CONVERSATION_STEPS.length - 1) {
             const nextStep = currentStep + 1;
             setCurrentStep(nextStep);
@@ -84,13 +112,39 @@ export default function Practice() {
             ]);
             setFeedbackData(null);
         } else {
+            // Final step: update counter before redirecting
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user) {
+                const { data: profile } = await supabase
+                    .from("profiles")
+                    .select("last_practice_date, practice_count_today")
+                    .eq("id", session.user.id)
+                    .single();
+
+                if (profile) {
+                    const today = new Date().toISOString().split("T")[0];
+                    const updates = {
+                        last_practice_date: today,
+                        practice_count_today: profile.last_practice_date === today ? profile.practice_count_today + 1 : 1
+                    };
+                    await supabase.from("profiles").update(updates).eq("id", session.user.id);
+                }
+            }
             router.push('/result');
         }
     };
 
+    if (isPageLoading) {
+        return (
+            <main className="min-h-screen bg-background flex flex-col items-center justify-center p-6 relative">
+                <div className="h-12 w-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+            </main>
+        );
+    }
+
     return (
         <main className="min-h-screen bg-background flex flex-col items-center p-6 pt-12 relative overflow-hidden">
-            <div className="w-full max-w-2xl space-y-8 relative z-10">
+            <div className="w-full max-w-2xl space-y-8 relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 {/* Header */}
                 <div className="text-center space-y-2 mb-8">
                     <h1 className="text-3xl font-extrabold tracking-tight text-text-main drop-shadow-sm">
