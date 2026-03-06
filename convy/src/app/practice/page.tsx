@@ -31,6 +31,8 @@ export default function Practice() {
     const [isLoadingFeedback, setIsLoadingFeedback] = useState(false);
     const [isPageLoading, setIsPageLoading] = useState(true);
 
+    const [scores, setScores] = useState<number[]>([]);
+
     // Initial limit check
     useEffect(() => {
         const verifyAccess = async () => {
@@ -80,6 +82,8 @@ export default function Practice() {
             const data = await response.json();
             if (response.ok) {
                 setFeedbackData(data);
+                const numericScore = parseInt(data.score.split('/')[0]) || 0;
+                setScores(prev => [...prev, numericScore]);
             } else {
                 console.error("Feedback error:", data.error);
                 setFeedbackData({
@@ -112,9 +116,10 @@ export default function Practice() {
             ]);
             setFeedbackData(null);
         } else {
-            // Final step: update counter before redirecting
+            // Final step: update counter and save session before redirecting
             const { data: { session } } = await supabase.auth.getSession();
             if (session?.user) {
+                // Update profile practice count
                 const { data: profile } = await supabase
                     .from("profiles")
                     .select("last_practice_date, practice_count_today")
@@ -128,6 +133,31 @@ export default function Practice() {
                         practice_count_today: profile.last_practice_date === today ? profile.practice_count_today + 1 : 1
                     };
                     await supabase.from("profiles").update(updates).eq("id", session.user.id);
+                }
+
+                // Save practice session
+                console.log("saving practice session");
+                try {
+                    let finalScore = 0;
+                    if (feedbackData?.score) {
+                        const parsed = parseInt(feedbackData.score.split('/')[0]);
+                        if (!isNaN(parsed)) finalScore = parsed;
+                    }
+
+                    const { error: insertError } = await supabase.from("practice_sessions").insert({
+                        user_id: session.user.id,
+                        situation_id: null,
+                        score: finalScore,
+                        created_at: new Date().toISOString()
+                    });
+
+                    if (insertError) {
+                        console.log("practice session save error", insertError);
+                    } else {
+                        console.log("practice session saved");
+                    }
+                } catch (e) {
+                    console.log("practice session save error", e);
                 }
             }
             router.push('/result');
