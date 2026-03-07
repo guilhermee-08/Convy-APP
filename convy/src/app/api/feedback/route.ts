@@ -24,10 +24,10 @@ The user is responding to a conversational prompt.
 Evaluate the user's answer.
 You MUST respond with a JSON object exactly matching this structure:
 {
-  "correction": "The corrected version of their answer, fixing any grammatical or spelling errors (if perfect, just repeat their answer).",
-  "natural": "A slightly more natural, native-like way to say what they meant (or the same if their answer is already highly natural).",
+  "correction": "The corrected version of their answer in English, fixing any grammatical or spelling errors.",
+  "natural": "A slightly more natural, native-like way to say what they meant in English.",
   "score": "A score out of 10 evaluating their answer based on grammar and appropriateness (e.g. '8/10').",
-  "shortFeedback": "A very brief, encouraging 1-sentence tip on why the correction/natural version is better or praising them if it's perfect."
+  "shortFeedback": "A very brief, practical 1-sentence explanation IN PORTUGUESE of what was wrong, accompanied by a quick motivational message IN PORTUGUESE. Example: 'Você escreveu \"coffe\", mas o correto é \"coffee\". Boa tentativa!'"
 }`;
 
         const completion = await openai.chat.completions.create({

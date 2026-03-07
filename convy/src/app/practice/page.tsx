@@ -1,17 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { supabase } from "@/lib/supabase";
 
-const CONVERSATION_STEPS = [
-    "Hello! What would you like to drink?",
-    "What size would you like?",
-    "Anything else?"
-];
+type ConversationStep = {
+    id: string;
+    step_order: number;
+    question: string;
+};
 
 type FeedbackData = {
     correction: string;
@@ -20,22 +20,26 @@ type FeedbackData = {
     shortFeedback: string;
 } | null;
 
-export default function Practice() {
+function PracticeContent() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const situationId = searchParams.get('situation_id');
+
     const [currentStep, setCurrentStep] = useState(0);
-    const [messages, setMessages] = useState([
-        { role: 'ai', content: CONVERSATION_STEPS[0] }
-    ]);
+    const [messages, setMessages] = useState<{ role: string, content: string }[]>([]);
     const [inputValue, setInputValue] = useState("");
     const [feedbackData, setFeedbackData] = useState<FeedbackData>(null);
     const [isLoadingFeedback, setIsLoadingFeedback] = useState(false);
     const [isPageLoading, setIsPageLoading] = useState(true);
 
+    const [conversationSteps, setConversationSteps] = useState<ConversationStep[]>([]);
+    const [situationTitle, setSituationTitle] = useState("Conversa");
+
     const [scores, setScores] = useState<number[]>([]);
 
-    // Initial limit check
+    // Initial limit check & load data
     useEffect(() => {
-        const verifyAccess = async () => {
+        const loadData = async () => {
             const { data: { session } } = await supabase.auth.getSession();
             if (!session?.user) {
                 router.push("/login");
@@ -55,10 +59,42 @@ export default function Practice() {
                     return;
                 }
             }
+
+            if (situationId) {
+                const { data: situation } = await supabase
+                    .from('situations')
+                    .select('title')
+                    .eq('id', situationId)
+                    .single();
+                if (situation) {
+                    setSituationTitle(situation.title);
+                }
+
+                const { data: steps } = await supabase
+                    .from('conversation_steps')
+                    .select('*')
+                    .eq('situation_id', situationId)
+                    .order('step_order', { ascending: true });
+
+                console.log("conversation steps:", steps);
+
+                if (steps && steps.length > 0) {
+                    setConversationSteps(steps);
+                    setMessages([{ role: 'ai', content: steps[0].question }]);
+                } else {
+                    const fallbackStep = { id: 'fallback', step_order: 1, question: "Nenhuma pergunta encontrada para esta conversa." };
+                    setConversationSteps([fallbackStep as ConversationStep]);
+                    setMessages([{ role: 'ai', content: fallbackStep.question }]);
+                }
+            } else {
+                router.push("/home");
+                return;
+            }
+
             setIsPageLoading(false);
         };
-        verifyAccess();
-    }, [router]);
+        loadData();
+    }, [router, situationId]);
 
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -75,7 +111,7 @@ export default function Practice() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    question: CONVERSATION_STEPS[currentStep],
+                    question: conversationSteps[currentStep].question,
                     userAnswer: userText
                 })
             });
@@ -107,12 +143,12 @@ export default function Practice() {
     };
 
     const handleNextQuestion = async () => {
-        if (currentStep < CONVERSATION_STEPS.length - 1) {
+        if (currentStep < conversationSteps.length - 1) {
             const nextStep = currentStep + 1;
             setCurrentStep(nextStep);
             setMessages((prev) => [
                 ...prev,
-                { role: 'ai', content: CONVERSATION_STEPS[nextStep] }
+                { role: 'ai', content: conversationSteps[nextStep].question }
             ]);
             setFeedbackData(null);
         } else {
@@ -146,7 +182,7 @@ export default function Practice() {
 
                     const { error: insertError } = await supabase.from("practice_sessions").insert({
                         user_id: session.user.id,
-                        situation_id: null,
+                        situation_id: situationId,
                         score: finalScore,
                         created_at: new Date().toISOString()
                     });
@@ -181,7 +217,7 @@ export default function Practice() {
                         Prática de conversa
                     </h1>
                     <p className="text-text-secondary">
-                        Cafeteria - Passo {currentStep + 1} de {CONVERSATION_STEPS.length}
+                        {situationTitle} - Passo {currentStep + 1} de {conversationSteps.length || 1}
                     </p>
                 </div>
 
@@ -242,17 +278,36 @@ export default function Practice() {
                                 {feedbackData.shortFeedback}
                             </div>
 
-                            <div className="flex items-center justify-between border-t border-border/50 pt-4">
-                                <div className="space-y-0.5">
-                                    <span className="text-sm font-medium text-text-secondary uppercase tracking-wider">Nota</span>
-                                    <div className="text-2xl font-bold text-text-main">
-                                        {feedbackData.score}
+                            <div className="flex flex-col gap-4 border-t border-border/50 pt-4">
+                                <div className="flex items-center justify-between">
+                                    <div className="space-y-0.5">
+                                        <span className="text-sm font-medium text-text-secondary uppercase tracking-wider">Nota</span>
+                                        <div className="text-2xl font-bold text-text-main">
+                                            {feedbackData.score}
+                                        </div>
+                                    </div>
+
+                                    <div className="text-right max-w-[60%]">
+                                        <p className="text-sm font-medium text-primary">
+                                            {(() => {
+                                                const scoreNum = parseInt(feedbackData.score.split('/')[0]) || 0;
+                                                if (scoreNum >= 9) return "Incrível! Sua resposta soou muito natural.";
+                                                if (scoreNum >= 7) return "Ótimo trabalho! Você está ficando mais fluente.";
+                                                if (scoreNum >= 5) return "Boa tentativa! Pequenos ajustes vão deixar sua resposta melhor.";
+                                                return "Bom esforço! Continue praticando e você vai melhorar rápido.";
+                                            })()}
+                                        </p>
                                     </div>
                                 </div>
 
-                                <Button variant="primary" onClick={handleNextQuestion} className="px-6 rounded-xl">
-                                    {currentStep < CONVERSATION_STEPS.length - 1 ? 'Próxima pergunta' : 'Ver resultado'}
-                                </Button>
+                                <div className="flex items-center justify-between pt-2">
+                                    <p className="text-sm font-medium text-text-secondary flex items-center gap-1.5">
+                                        Mantenha seu streak amanhã <span className="text-lg">🔥</span>
+                                    </p>
+                                    <Button variant="primary" onClick={handleNextQuestion} className="px-6 rounded-xl">
+                                        {currentStep < conversationSteps.length - 1 ? 'Próxima pergunta' : 'Ver resultado'}
+                                    </Button>
+                                </div>
                             </div>
                         </div>
                     </Card>
@@ -275,5 +330,17 @@ export default function Practice() {
                 )}
             </div>
         </main>
+    );
+}
+
+export default function Practice() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen bg-background flex flex-col items-center justify-center">
+                <div className="h-12 w-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+            </div>
+        }>
+            <PracticeContent />
+        </Suspense>
     );
 }
