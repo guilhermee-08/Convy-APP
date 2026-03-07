@@ -37,6 +37,76 @@ function PracticeContent() {
 
     const [scores, setScores] = useState<number[]>([]);
 
+    // Speech Recognition State
+    const [isListening, setIsListening] = useState(false);
+    const [recognitionSupported, setRecognitionSupported] = useState(true);
+    const [recognitionError, setRecognitionError] = useState("");
+
+    // Initialize SpeechRecognition
+    useEffect(() => {
+        if (typeof window !== "undefined") {
+            const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                setRecognitionSupported(false);
+            }
+        }
+    }, []);
+
+    const toggleListening = () => {
+        if (!recognitionSupported) {
+            setRecognitionError("Reconhecimento de voz não disponível neste navegador.");
+            setTimeout(() => setRecognitionError(""), 3000);
+            return;
+        }
+
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
+
+        // Configure for English recognition
+        recognition.lang = 'en-US';
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+
+        if (isListening) {
+            recognition.stop();
+            setIsListening(false);
+            return;
+        }
+
+        recognition.onstart = () => {
+            setIsListening(true);
+            setRecognitionError("");
+        };
+
+        recognition.onresult = (event: any) => {
+            const transcript = event.results[0][0].transcript;
+            // Append to existing input, or replace if empty
+            setInputValue((prev) => prev ? `${prev} ${transcript}` : transcript);
+        };
+
+        recognition.onerror = (event: any) => {
+            console.error("Speech recognition error", event.error);
+            setIsListening(false);
+            if (event.error === 'not-allowed') {
+                setRecognitionError("Permissão de microfone negada.");
+            } else {
+                setRecognitionError("Erro ao reconhecer voz. Tente novamente.");
+            }
+            setTimeout(() => setRecognitionError(""), 3000);
+        };
+
+        recognition.onend = () => {
+            setIsListening(false);
+        };
+
+        try {
+            recognition.start();
+        } catch (e) {
+            console.error(e);
+            setIsListening(false);
+        }
+    };
+
     // Initial limit check & load data
     useEffect(() => {
         const loadData = async () => {
@@ -315,18 +385,50 @@ function PracticeContent() {
 
                 {/* Input Area */}
                 {!feedbackData && !isLoadingFeedback && (
-                    <form onSubmit={handleSendMessage} className="flex gap-3 pt-4 border-t border-border/30">
-                        <Input
-                            placeholder="Digite sua resposta em inglês..."
-                            value={inputValue}
-                            onChange={(e) => setInputValue(e.target.value)}
-                            className="flex-1"
-                            autoFocus
-                        />
-                        <Button type="submit" variant="primary" className="px-8 rounded-xl shrink-0" disabled={!inputValue.trim()}>
-                            Enviar
-                        </Button>
-                    </form>
+                    <div className="pt-4 border-t border-border/30 space-y-2">
+                        <form onSubmit={handleSendMessage} className="flex gap-3 relative">
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                className={`px-4 rounded-xl shrink-0 transition-colors ${isListening
+                                        ? "bg-red-500/20 text-red-500 border-red-500/50 hover:bg-red-500/30 hover:text-red-400"
+                                        : "text-text-secondary hover:text-text-main"
+                                    }`}
+                                onClick={toggleListening}
+                                title="Falar em inglês"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isListening ? "animate-pulse" : ""}>
+                                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                                    <line x1="12" x2="12" y1="19" y2="22" />
+                                </svg>
+                            </Button>
+
+                            <Input
+                                placeholder={isListening ? "Ouvindo..." : "Digite sua resposta em inglês..."}
+                                value={inputValue}
+                                onChange={(e) => setInputValue(e.target.value)}
+                                className="flex-1"
+                                autoFocus
+                            />
+
+                            <Button type="submit" variant="primary" className="px-8 rounded-xl shrink-0" disabled={!inputValue.trim() || isListening}>
+                                Enviar
+                            </Button>
+                        </form>
+
+                        {/* Error Message for Speech Recognition */}
+                        {recognitionError && (
+                            <p className="text-red-400 text-xs pl-2 animate-in fade-in duration-300">
+                                {recognitionError}
+                            </p>
+                        )}
+                        {!recognitionSupported && !recognitionError && (
+                            <p className="text-text-secondary/50 text-xs pl-2">
+                                Reconhecimento de voz não disponível neste navegador.
+                            </p>
+                        )}
+                    </div>
                 )}
             </div>
         </main>
