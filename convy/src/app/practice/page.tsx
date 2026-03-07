@@ -42,12 +42,20 @@ function PracticeContent() {
     const [recognitionSupported, setRecognitionSupported] = useState(true);
     const [recognitionError, setRecognitionError] = useState("");
 
-    // Initialize SpeechRecognition
+    // Speech Synthesis State
+    const [isSpeaking, setIsSpeaking] = useState(false);
+    const [synthesisSupported, setSynthesisSupported] = useState(true);
+    const [synthesisError, setSynthesisError] = useState("");
+
+    // Initialize Speech APIs
     useEffect(() => {
         if (typeof window !== "undefined") {
             const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
             if (!SpeechRecognition) {
                 setRecognitionSupported(false);
+            }
+            if (!("speechSynthesis" in window)) {
+                setSynthesisSupported(false);
             }
         }
     }, []);
@@ -105,6 +113,36 @@ function PracticeContent() {
             console.error(e);
             setIsListening(false);
         }
+    };
+
+    const speakText = (text: string) => {
+        if (!synthesisSupported) {
+            setSynthesisError("Áudio não disponível neste navegador.");
+            setTimeout(() => setSynthesisError(""), 3000);
+            return;
+        }
+
+        window.speechSynthesis.cancel(); // Stop any ongoing speech
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'en-US';
+
+        // Try to find a native English voice if possible
+        const voices = window.speechSynthesis.getVoices();
+        const englishVoice = voices.find(v => v.lang.startsWith('en'));
+        if (englishVoice) {
+            utterance.voice = englishVoice;
+        }
+
+        utterance.onstart = () => setIsSpeaking(true);
+        utterance.onend = () => setIsSpeaking(false);
+        utterance.onerror = () => {
+            setIsSpeaking(false);
+            setSynthesisError("Erro ao reproduzir áudio.");
+            setTimeout(() => setSynthesisError(""), 3000);
+        };
+
+        window.speechSynthesis.speak(utterance);
     };
 
     // Initial limit check & load data
@@ -299,12 +337,27 @@ function PracticeContent() {
                             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                         >
                             <div
-                                className={`max-w-[80%] rounded-2xl px-5 py-3 shadow-sm ${msg.role === 'user'
+                                className={`max-w-[80%] rounded-2xl px-5 py-3 shadow-sm flex flex-col gap-1.5 ${msg.role === 'user'
                                     ? 'bg-primary text-white rounded-br-sm'
                                     : 'bg-card border border-border text-text-main rounded-bl-sm'
                                     }`}
                             >
-                                {msg.content}
+                                <div>{msg.content}</div>
+                                {msg.role === 'ai' && (
+                                    <div className="flex justify-end pt-1">
+                                        <button
+                                            onClick={() => speakText(msg.content)}
+                                            className="p-1.5 rounded-full text-text-secondary hover:text-primary hover:bg-primary/10 transition-colors flex items-center justify-center"
+                                            title="Ouvir pronúncia"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isSpeaking ? "animate-pulse text-primary" : ""}>
+                                                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                                                <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     ))}
@@ -391,8 +444,8 @@ function PracticeContent() {
                                 type="button"
                                 variant="secondary"
                                 className={`px-4 rounded-xl shrink-0 transition-colors ${isListening
-                                        ? "bg-red-500/20 text-red-500 border-red-500/50 hover:bg-red-500/30 hover:text-red-400"
-                                        : "text-text-secondary hover:text-text-main"
+                                    ? "bg-red-500/20 text-red-500 border-red-500/50 hover:bg-red-500/30 hover:text-red-400"
+                                    : "text-text-secondary hover:text-text-main"
                                     }`}
                                 onClick={toggleListening}
                                 title="Falar em inglês"
@@ -417,10 +470,10 @@ function PracticeContent() {
                             </Button>
                         </form>
 
-                        {/* Error Message for Speech Recognition */}
-                        {recognitionError && (
+                        {/* Error Message for Speech Recognition / Synthesis */}
+                        {(recognitionError || synthesisError) && (
                             <p className="text-red-400 text-xs pl-2 animate-in fade-in duration-300">
-                                {recognitionError}
+                                {recognitionError || synthesisError}
                             </p>
                         )}
                         {!recognitionSupported && !recognitionError && (
