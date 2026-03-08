@@ -19,6 +19,7 @@ export default function Paywall() {
     const [streak, setStreak] = useState(0);
     const [lastScore, setLastScore] = useState<number | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [isCheckingOut, setIsCheckingOut] = useState(false);
 
     useEffect(() => {
         const fetchProgress = async () => {
@@ -81,6 +82,20 @@ export default function Paywall() {
 
         fetchProgress();
     }, [router]);
+
+    const handleCheckout = async () => {
+        setIsCheckingOut(true);
+        try {
+            const res = await fetch("/api/checkout", { method: "POST" });
+            const data = await res.json();
+            if (data.url) {
+                window.location.href = data.url;
+            }
+        } catch (error) {
+            console.error("Error redirecting to checkout:", error);
+            setIsCheckingOut(false);
+        }
+    };
 
     return (
         <main className="min-h-screen bg-background flex flex-col items-center justify-center p-6 relative overflow-hidden py-12">
@@ -161,9 +176,10 @@ export default function Paywall() {
                         <Button
                             variant="primary"
                             className="w-full text-xl h-16 rounded-2xl shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:shadow-[0_0_30px_rgba(99,102,241,0.5)] transition-all font-bold"
-                            onClick={() => router.push("/home")}
+                            onClick={handleCheckout}
+                            disabled={isCheckingOut}
                         >
-                            Desbloquear Premium
+                            {isCheckingOut ? "Carregando..." : "Desbloquear Premium"}
                         </Button>
                         <p className="text-sm font-medium text-text-secondary/80 pt-1 flex justify-center items-center gap-1">
                             <span className="opacity-70">🔒</span> Cancele quando quiser.
