@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -43,7 +43,16 @@ import { supabase } from "@/lib/supabase";
 type ConversationStep = {
     id: string;
     step_order: number;
-    question: string;
+    question_main?: string;
+    question_alt_1?: string;
+    question_alt_2?: string;
+    translation_main?: string;
+    translation_alt_1?: string;
+    translation_alt_2?: string;
+    hint_main?: string;
+    hint_alt_1?: string;
+    hint_alt_2?: string;
+    question: string; // The randomly selected variation
     translation?: string;
     hint?: string;
 };
@@ -55,6 +64,8 @@ type Message = {
     hint?: string;
     showTranslation?: boolean;
     showHint?: boolean;
+    vocabulary?: { word: string; translation: string }[];
+    isLoadingTranslation?: boolean;
 };
 
 type FeedbackData = {
@@ -72,8 +83,17 @@ function PracticeContent() {
     const [currentStep, setCurrentStep] = useState(0);
     const [messages, setMessages] = useState<Message[]>([]);
     const [inputValue, setInputValue] = useState("");
-    const [feedbackData, setFeedbackData] = useState<FeedbackData>(null);
     const [isLoadingFeedback, setIsLoadingFeedback] = useState(false);
+
+    // Feedback and conversation ending states
+    const [turnFeedbacks, setTurnFeedbacks] = useState<any[]>([]);
+    const [isConversationEnded, setIsConversationEnded] = useState(false);
+    const [showFullReview, setShowFullReview] = useState(false);
+
+    // Final result loading states
+    type LoadingState = "idle" | "stage1" | "stage2";
+    const [finalLoadingState, setFinalLoadingState] = useState<LoadingState>("idle");
+
     const [isPageLoading, setIsPageLoading] = useState(true);
 
     const [conversationSteps, setConversationSteps] = useState<ConversationStep[]>([]);
@@ -89,7 +109,10 @@ function PracticeContent() {
     // Speech Synthesis State
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [synthesisSupported, setSynthesisSupported] = useState(true);
-    const [synthesisError, setSynthesisError] = useState("");
+    const [synthesisError, setSynthesisError] = useState<string | null>(null);
+
+    // Determines if the user is typing or using the new voice-first interface
+    const [isTypingMode, setIsTypingMode] = useState(false);
 
     // Repetition State
     const [isRepeating, setIsRepeating] = useState(false);
@@ -101,6 +124,20 @@ function PracticeContent() {
     const [newStreak, setNewStreak] = useState(0);
 
     const [limitReached, setLimitReached] = useState(false);
+    const [isVoiceResponse, setIsVoiceResponse] = useState(false);
+
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const audioContextRef = useRef<AudioContext | null>(null);
+    // Track which message index was last read aloud to prevent double-playing
+    const lastSpokenMessageIndex = useRef<number>(-1);
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages, isLoadingFeedback]);
 
     // Initialize Speech APIs
     useEffect(() => {
@@ -143,8 +180,9 @@ function PracticeContent() {
 
         recognition.onresult = (event: any) => {
             const transcript = event.results[0][0].transcript;
-            // Append to existing input, or replace if empty
-            setInputValue((prev) => prev ? `${prev} ${transcript}` : transcript);
+            if (!transcript) return;
+            setInputValue(transcript);
+            submitMessage(transcript, true);
         };
 
         recognition.onerror = (event: any) => {
@@ -225,38 +263,120 @@ function PracticeContent() {
     };
 
     const speakText = (text: string) => {
-        if (!synthesisSupported) {
-            setSynthesisError("Áudio não disponível neste navegador.");
-            setTimeout(() => setSynthesisError(""), 3000);
+        try {
+            if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+                return;
+            }
+
+            if (!synthesisSupported) {
+                return;
+            }
+
+            const synth = window.speechSynthesis;
+            if (!synth) return;
+
+            // Cancel any ongoing speech to prevent queueing
+            try {
+                synth.cancel();
+            } catch (e) {
+                console.warn("Could not cancel previous speech", e);
+            }
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            if (!utterance) return;
+
+            utterance.lang = 'en-US';
+
+            try {
+                // Try to find a native English voice if possible
+                const voices = synth.getVoices() || [];
+                // Prefer a specific US English voice for better quality if available, fallback to any English voice
+                const englishVoice = voices.find(v => v.lang === 'en-US') || voices.find(v => v.lang.startsWith('en'));
+                if (englishVoice) {
+                    utterance.voice = englishVoice;
+                }
+            } catch (e) {
+                console.warn("Could not retrieve voices", e);
+            }
+
+            utterance.onstart = () => setIsSpeaking(true);
+            utterance.onerror = (event) => {
+                console.warn("Speech synthesis error:", event);
+                setIsSpeaking(false);
+            };
+            utterance.onend = () => setIsSpeaking(false);
+
+            synth.speak(utterance);
+        } catch (error) {
+            console.warn("Speech synthesis failed gracefully:", error);
+            setIsSpeaking(false);
+        }
+    };
+
+    // Auto-play TTS when a newly rendered AI message appears
+    useEffect(() => {
+        if (messages.length > 0) {
+            const lastIndex = messages.length - 1;
+            const lastMessage = messages[lastIndex];
+
+            // If the newest message is from AI and we haven't spoken it yet
+            if (lastMessage.role === 'ai' && lastSpokenMessageIndex.current !== lastIndex) {
+                lastSpokenMessageIndex.current = lastIndex;
+
+                // Slight delay to ensure UI renders smoothly before audio block
+                setTimeout(() => {
+                    try {
+                        speakText(lastMessage.content);
+                    } catch (e) {
+                        console.warn("Auto-play TTS error:", e);
+                    }
+                }, 300);
+            }
+        }
+    }, [messages]);
+
+    const toggleTranslation = async (idx: number) => {
+        const msg = messages[idx];
+        if (!msg) return;
+
+        // If it's already showing, just hide it
+        if (msg.showTranslation) {
+            setMessages(prev => prev.map((m, i) => i === idx ? { ...m, showTranslation: false } : m));
             return;
         }
 
-        window.speechSynthesis.cancel(); // Stop any ongoing speech
+        // If we don't have a vocabulary breakdown yet, fetch it
+        if (!msg.vocabulary) {
+            setMessages(prev => prev.map((m, i) => i === idx ? { ...m, isLoadingTranslation: true } : m));
 
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'en-US';
+            try {
+                const response = await fetch('/api/translate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: msg.content })
+                });
 
-        // Try to find a native English voice if possible
-        const voices = window.speechSynthesis.getVoices();
-        // Prefer a specific US English voice for better quality if available, fallback to any English voice
-        const englishVoice = voices.find(v => v.lang === 'en-US') || voices.find(v => v.lang.startsWith('en'));
-        if (englishVoice) {
-            utterance.voice = englishVoice;
+                if (response.ok) {
+                    const data = await response.json();
+                    setMessages(prev => prev.map((m, i) => i === idx ? {
+                        ...m,
+                        translation: data.translation,
+                        vocabulary: data.vocabulary,
+                        isLoadingTranslation: false,
+                        showTranslation: true
+                    } : m));
+                } else {
+                    // Fallback to just showing whatever translation we had
+                    setMessages(prev => prev.map((m, i) => i === idx ? { ...m, isLoadingTranslation: false, showTranslation: true } : m));
+                }
+            } catch (error) {
+                console.error("Translation fetch error:", error);
+                setMessages(prev => prev.map((m, i) => i === idx ? { ...m, isLoadingTranslation: false, showTranslation: true } : m));
+            }
+        } else {
+            // We already have it, just show it
+            setMessages(prev => prev.map((m, i) => i === idx ? { ...m, showTranslation: true } : m));
         }
-
-        utterance.onstart = () => setIsSpeaking(true);
-        utterance.onend = () => setIsSpeaking(false);
-        utterance.onerror = () => {
-            setIsSpeaking(false);
-            setSynthesisError("Erro ao reproduzir áudio.");
-            setTimeout(() => setSynthesisError(""), 3000);
-        };
-
-        window.speechSynthesis.speak(utterance);
-    };
-
-    const toggleTranslation = (idx: number) => {
-        setMessages(prev => prev.map((msg, i) => i === idx ? { ...msg, showTranslation: !msg.showTranslation } : msg));
     };
 
     const toggleHint = (idx: number) => {
@@ -304,18 +424,86 @@ function PracticeContent() {
                     .order('step_order', { ascending: true });
 
                 console.log("conversation steps:", steps);
-
                 if (steps && steps.length > 0) {
-                    setConversationSteps(steps);
+                    const processedSteps = steps.slice(0, 4).map((step: any) => {
+                        const variations: { question: string; translation?: string; hint?: string }[] = [];
+
+                        // 1. Include question_main if it exists. DO NOT fall back to old "question" if it does.
+                        if (step.question_main) {
+                            variations.push({
+                                question: step.question_main,
+                                translation: step.translation_main || step.translation,
+                                hint: step.hint_main || step.hint
+                            });
+                        } else if (step.question) {
+                            variations.push({
+                                question: step.question,
+                                translation: step.translation,
+                                hint: step.hint
+                            });
+                        }
+
+                        // 2. Include question_alt_1 if it exists
+                        if (step.question_alt_1) {
+                            variations.push({
+                                question: step.question_alt_1,
+                                translation: step.translation_alt_1 || step.translation,
+                                hint: step.hint_alt_1 || step.hint
+                            });
+                        }
+
+                        // 3. Include question_alt_2 if it exists
+                        if (step.question_alt_2) {
+                            variations.push({
+                                question: step.question_alt_2,
+                                translation: step.translation_alt_2 || step.translation,
+                                hint: step.hint_alt_2 || step.hint
+                            });
+                        }
+
+                        console.log("question variations:", variations);
+
+                        // Randomly choose ONE variation
+                        const selectedVariation = variations.length > 0
+                            ? variations[Math.floor(Math.random() * variations.length)]
+                            : { question: "Error: No question provided in database." };
+
+                        console.log("chosen question variation:", selectedVariation);
+
+                        // Randomly select hint variation independently to make it less repetitive
+                        const hintVariations: string[] = [];
+                        if (step.hint_main) hintVariations.push(step.hint_main);
+                        else if (step.hint) hintVariations.push(step.hint);
+
+                        if (step.hint_alt_1) hintVariations.push(step.hint_alt_1);
+                        if (step.hint_alt_2) hintVariations.push(step.hint_alt_2);
+
+                        const selectedHint = hintVariations.length > 0
+                            ? hintVariations[Math.floor(Math.random() * hintVariations.length)]
+                            : selectedVariation.hint;
+
+                        return {
+                            ...step,
+                            question: selectedVariation.question,
+                            translation: selectedVariation.translation,
+                            hint: selectedHint,
+                        };
+                    });
+
+                    setConversationSteps(processedSteps);
                     setMessages([{
                         role: 'ai',
-                        content: steps[0].question,
-                        translation: steps[0].translation,
-                        hint: steps[0].hint
+                        content: processedSteps[0].question,
+                        translation: processedSteps[0].translation,
+                        hint: processedSteps[0].hint
                     }]);
                 } else {
-                    const fallbackStep = { id: 'fallback', step_order: 1, question: "Nenhuma pergunta encontrada para esta conversa." };
-                    setConversationSteps([fallbackStep as ConversationStep]);
+                    const fallbackStep: ConversationStep = {
+                        id: 'fallback',
+                        step_order: 1,
+                        question: "Nenhuma pergunta encontrada para esta conversa."
+                    };
+                    setConversationSteps([fallbackStep]);
                     setMessages([{ role: 'ai', content: fallbackStep.question }]);
                 }
             } else {
@@ -332,97 +520,153 @@ function PracticeContent() {
         e.preventDefault();
         const userText = inputValue.trim();
         if (!userText) return;
-
-        const newMessages = [...messages, { role: 'user', content: userText }];
-        setMessages(newMessages);
-        setInputValue("");
-        setIsLoadingFeedback(true);
-
-        try {
-            const response = await fetch('/api/feedback', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    question: conversationSteps[currentStep].question,
-                    userAnswer: userText
-                })
-            });
-            const data = await response.json();
-            if (response.ok) {
-                setFeedbackData(data);
-                const numericScore = parseInt(data.score.split('/')[0]) || 0;
-                setScores(prev => [...prev, numericScore]);
-                setRepeatedText(""); // Reset repeat block for new feedback
-            } else {
-                console.error("Feedback error:", data.error);
-                setFeedbackData({
-                    correction: userText,
-                    natural: userText,
-                    score: "N/A",
-                    shortFeedback: "There was an error generating feedback. Please continue."
-                });
-            }
-        } catch (error) {
-            console.error("Networking error:", error);
-            setFeedbackData({
-                correction: userText,
-                natural: userText,
-                score: "N/A",
-                shortFeedback: "Network error occurred."
-            });
-        } finally {
-            setIsLoadingFeedback(false);
-        }
+        await submitMessage(userText, false);
     };
 
-    const handleNextQuestion = async () => {
-        if (currentStep < conversationSteps.length - 1) {
-            const nextStep = currentStep + 1;
-            setCurrentStep(nextStep);
-            setMessages((prev) => [
-                ...prev,
-                {
-                    role: 'ai',
-                    content: conversationSteps[nextStep].question,
-                    translation: conversationSteps[nextStep].translation,
-                    hint: conversationSteps[nextStep].hint
-                }
-            ]);
-            setFeedbackData(null);
+    const submitMessage = async (text: string, isVoice: boolean = false) => {
+        setIsVoiceResponse(isVoice);
+
+        let nextStep = currentStep;
+        let isFinal = false;
+
+        // 1. Immediately update UI with user's message
+        const userMessage: Message = { role: 'user', content: text };
+
+        // 2. Immediately determine next AI message
+        let nextAiMessage: Message | null = null;
+
+        if (currentStep < 2 && currentStep < conversationSteps.length - 1) {
+            nextStep = currentStep + 1;
+            nextAiMessage = {
+                role: 'ai',
+                content: conversationSteps[nextStep].question,
+                translation: conversationSteps[nextStep].translation,
+                hint: conversationSteps[nextStep].hint
+            };
         } else {
-            // Final step: update counter and save session before redirecting
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session?.user) {
-                // Update profile practice count and xp
-                const { data: profile } = await supabase
-                    .from("profiles")
-                    .select("last_practice_date, practice_count_today, xp")
-                    .eq("id", session.user.id)
-                    .single();
+            isFinal = true;
+            const closingStep = conversationSteps[3];
+            nextAiMessage = {
+                role: 'ai',
+                content: closingStep ? closingStep.question : "Perfect. Let's wrap this up.",
+                translation: closingStep?.translation,
+                hint: closingStep?.hint
+            };
+        }
 
-                if (profile) {
-                    const today = new Date().toISOString().split("T")[0];
-                    let earnedXp = 0;
+        // Apply immediate UI update for both messages at once
+        setMessages(prev => [...prev, userMessage, nextAiMessage as Message]);
+        setCurrentStep(nextStep);
+        setInputValue("");
 
-                    if (feedbackData?.score) {
-                        const parsed = parseInt(feedbackData.score.split('/')[0]);
-                        if (!isNaN(parsed)) {
-                            if (parsed >= 9) earnedXp = 20;
-                            else if (parsed >= 7) earnedXp = 15;
-                            else if (parsed >= 5) earnedXp = 10;
-                            else earnedXp = 5;
-                        }
-                    }
+        if (isFinal) {
+            // Fill progress bar for the final state
+            setCurrentStep(3);
 
-                    const updates = {
-                        last_practice_date: today,
-                        practice_count_today: profile.last_practice_date === today ? profile.practice_count_today + 1 : 1,
-                        xp: (profile.xp || 0) + earnedXp
-                    };
-                    await supabase.from("profiles").update(updates).eq("id", session.user.id);
+            // Start the two-stage loading flow immediately
+            setFinalLoadingState("stage1");
+
+            // Switch to stage 2 after a natural reading delay
+            setTimeout(() => {
+                setFinalLoadingState(current => current === "stage1" ? "stage2" : current);
+            }, 2500);
+        }
+
+        // 3. Fire background feedback request (fire-and-forget)
+        const currentQuestion = conversationSteps[currentStep].question;
+        const currentTurnIndex = currentStep;
+
+        setIsLoadingFeedback(true); // Can use this to show a subtle background saving state if needed
+
+        fetch('/api/feedback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                question: currentQuestion,
+                userAnswer: text
+            })
+        }).then(async (response) => {
+            if (response.ok) {
+                const data = await response.json();
+
+                // Store the full feedback invisibly mapped to this turn
+                setTurnFeedbacks(prev => {
+                    const next = [...prev];
+                    next[currentTurnIndex] = data;
+                    return next;
+                });
+
+                const numericScore = parseInt(data.score.split('/')[0]) || 0;
+                setScores(prev => [...prev, numericScore]);
+            } else {
+                console.error("Feedback error for turn", currentTurnIndex);
+            }
+        }).catch(error => {
+            console.error("Networking error for turn", currentTurnIndex, error);
+        }).finally(() => {
+            // Calculate if this is the final turn and we should show the evaluation screen
+            setIsLoadingFeedback(false);
+
+            // If we just processed the feedback for the 3rd turn
+            setTurnFeedbacks(currentFeedbacks => {
+                // If it's final and we have 3 feedbacks ready
+                if (isFinal) {
+                    // Force stage 2 if we somehow finished stage 1 super fast
+                    setFinalLoadingState(current => {
+                        if (current === "stage1") return "stage2";
+                        return current;
+                    });
+
+                    // We ensure it stays on stage 2 for at least a brief moment to feel natural
+                    setTimeout(() => {
+                        setFinalLoadingState("idle");
+                        setIsConversationEnded(true);
+                    }, 1500);
+                }
+                return currentFeedbacks;
+            });
+        });
+    };
+
+    const handleShowReview = () => {
+        setShowFullReview(true);
+        setTimeout(() => {
+            const reviewSection = document.getElementById("full-review-section");
+            if (reviewSection) {
+                const yOffset = -24; // slight padding from top
+                const y = reviewSection.getBoundingClientRect().top + window.scrollY + yOffset;
+                window.scrollTo({ top: y, behavior: 'smooth' });
+            }
+        }, 150);
+    };
+
+    const handleFinishReview = async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+            // Update profile practice count and xp
+            const { data: profile } = await supabase
+                .from("profiles")
+                .select("last_practice_date, practice_count_today, xp")
+                .eq("id", session.user.id)
+                .single();
+
+            let finalOldStreak = 0;
+            let finalNewStreak = 1;
+
+            if (profile) {
+                // Determine dates
+                const today = new Date();
+                today.setHours(0, 0, 0, 0); // Normalize to local midnight
+                const todayStr = today.toISOString().split("T")[0]; // YYYY-MM-DD
+
+                const lastPracticeDateStr = profile.last_practice_date;
+                let lastPracticeDate = new Date(lastPracticeDateStr || 0);
+                if (lastPracticeDateStr) {
+                    // Normalize to prevent timezone shifts matching wrong days if the DB stored specific times.
+                    lastPracticeDate = new Date(lastPracticeDateStr + "T00:00:00");
                 }
 
-                // Calculate Streak
+                // Calculate Streak from History
                 const { data: practices } = await supabase
                     .from('practice_sessions')
                     .select('created_at')
@@ -431,79 +675,116 @@ function PracticeContent() {
 
                 let calculatedOldStreak = 0;
                 if (practices && practices.length > 0) {
-                    const dates = new Set(practices.map(p => p.created_at.split('T')[0]));
-                    const todayObj = new Date();
-                    const yesterday = new Date(todayObj);
-                    yesterday.setDate(yesterday.getDate() - 1);
-                    const yesterdayStr = yesterday.toISOString().split("T")[0];
+                    const datesArray = Array.from(new Set(practices.map(p => {
+                        const localDate = new Date(p.created_at);
+                        localDate.setHours(0, 0, 0, 0);
+                        const year = localDate.getFullYear();
+                        const month = String(localDate.getMonth() + 1).padStart(2, '0');
+                        const day = String(localDate.getDate()).padStart(2, '0');
+                        return `${year}-${month}-${day}`;
+                    }))).sort((a, b) => b.localeCompare(a));
 
-                    // If they practiced yesterday, their old streak is at least 1. Note: This is an approximation
-                    // for the animation, assuming they haven't practiced yet today.
-                    if (dates.has(yesterdayStr)) {
-                        calculatedOldStreak = 1; // Simplified for animation purposes to show an increment
-                        // In a real app we'd calculate the full unbroken chain backwards. For this UI, we just need a baseline.
-                        // Let's do a basic backwards loop:
-                        let checkDate = new Date(yesterday);
-                        let streakLoops = 0;
-                        while (dates.has(checkDate.toISOString().split("T")[0])) {
-                            streakLoops++;
-                            checkDate.setDate(checkDate.getDate() - 1);
+                    let currentRun = 0;
+                    let lastDateInRun: Date | null = null;
+
+                    for (let i = datesArray.length - 1; i >= 0; i--) {
+                        const d = new Date(datesArray[i] + 'T00:00:00');
+                        if (!lastDateInRun) {
+                            currentRun = 1;
+                        } else {
+                            const diffDays = Math.round(Math.abs(d.getTime() - lastDateInRun.getTime()) / (1000 * 3600 * 24));
+                            if (diffDays === 1) {
+                                currentRun++;
+                            } else if (diffDays > 1) {
+                                currentRun = 1;
+                            }
                         }
-                        calculatedOldStreak = streakLoops;
+                        lastDateInRun = d;
                     }
+
+                    if (lastDateInRun) {
+                        const diffFromToday = Math.round(Math.abs(today.getTime() - lastDateInRun.getTime()) / (1000 * 3600 * 24));
+                        if (diffFromToday > 1) {
+                            currentRun = 0;
+                        }
+                    }
+                    calculatedOldStreak = currentRun;
                 }
 
-                const profilePracticeCountToday = profile?.last_practice_date === new Date().toISOString().split("T")[0] ? profile.practice_count_today : 0;
-
-                // If this is their first practice today, increment streak. Otherwise, streak remains the same.
+                const profilePracticeCountToday = profile.last_practice_date === todayStr ? profile.practice_count_today : 0;
                 const wasFirstPracticeToday = profilePracticeCountToday === 0;
-                const finalOldStreak = wasFirstPracticeToday ? calculatedOldStreak : Math.max(1, calculatedOldStreak + 1);
-                const finalNewStreak = wasFirstPracticeToday ? calculatedOldStreak + 1 : finalOldStreak;
 
-                setOldStreak(finalOldStreak);
-                setNewStreak(finalNewStreak);
+                // Streak Logic Calculation (User Explicit Rules)
+                // - if last_practice_date is yesterday: streak_count + 1
+                // - if last_practice_date is not yesterday: streak_count = 1
+                // - except if already today, keep current streak
+                // the variable calculatedOldStreak is already handling this history analysis robustly.
+                finalOldStreak = wasFirstPracticeToday ? calculatedOldStreak : Math.max(1, calculatedOldStreak);
+                finalNewStreak = wasFirstPracticeToday ? calculatedOldStreak + 1 : finalOldStreak;
 
-                // Save practice session
-                console.log("saving practice session");
-                try {
-                    let finalScore = 0;
-                    if (feedbackData?.score) {
-                        const parsed = parseInt(feedbackData.score.split('/')[0]);
-                        if (!isNaN(parsed)) finalScore = parsed;
-                    }
-
-                    const { error: insertError } = await supabase.from("practice_sessions").insert({
-                        user_id: session.user.id,
-                        situation_id: situationId,
-                        score: finalScore,
-                        created_at: new Date().toISOString()
-                    });
-
-                    if (insertError) {
-                        console.log("practice session save error", insertError);
-                    } else {
-                        console.log("practice session saved");
-                    }
-                } catch (e) {
-                    console.log("practice session save error", e);
+                // Calculate earned XP
+                let earnedXp = 0;
+                if (scores.length > 0) {
+                    const finalScore = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+                    if (finalScore >= 9) earnedXp = 20;
+                    else if (finalScore >= 7) earnedXp = 15;
+                    else if (finalScore >= 5) earnedXp = 10;
+                    else earnedXp = 5;
                 }
+
+                // Update Profile
+                const updates = {
+                    ...profile,
+                    last_practice_date: todayStr,
+                    practice_count_today: profile.last_practice_date === todayStr ? profile.practice_count_today + 1 : 1,
+                    xp: (profile.xp || 0) + earnedXp
+                };
+
+                await supabase.from("profiles").update(updates).eq("id", session.user.id);
             }
 
-            playSuccessSound();
-            setShowStreakAnimation(true);
-            setTimeout(() => {
-                router.push('/result');
-            }, 2500);
+            // Set states for the animation UI
+            setOldStreak(finalOldStreak);
+            setNewStreak(finalNewStreak);
+
+            // Save practice session
+            console.log("saving practice session");
+            try {
+                let finalScore = 0;
+                if (scores.length > 0) {
+                    finalScore = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+                }
+
+                const { error: insertError } = await supabase.from("practice_sessions").insert({
+                    user_id: session.user.id,
+                    situation_id: situationId,
+                    score: finalScore,
+                    created_at: new Date().toISOString()
+                });
+
+                if (insertError) {
+                    console.log("practice session save error", insertError);
+                } else {
+                    console.log("practice session saved");
+                }
+            } catch (e) {
+                console.log("practice session save error", e);
+            }
         }
-    };
+
+        playSuccessSound();
+        setShowStreakAnimation(true);
+        setTimeout(() => {
+            router.push('/result');
+        }, 2500);
+    }
 
     if (showStreakAnimation) {
         // Quick local calculation of XP strictly for visual display on this transition screen
         let displayXp = 0;
         let finalScore = 0;
-        if (feedbackData?.score) {
-            const parsed = parseInt(feedbackData.score.split('/')[0]);
-            if (!isNaN(parsed)) finalScore = parsed;
+        if (scores.length > 0) {
+            finalScore = Math.round(scores.reduce((a: number, b: number) => a + b, 0) / scores.length);
         }
         if (finalScore >= 9) displayXp = 20;
         else if (finalScore >= 7) displayXp = 15;
@@ -637,10 +918,10 @@ function PracticeContent() {
     }
 
     return (
-        <main className="min-h-screen bg-background flex flex-col items-center p-6 pt-12 relative overflow-hidden">
-            <div className="w-full max-w-2xl space-y-8 relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <main className="min-h-screen bg-background flex flex-col items-center p-4 md:p-6 relative">
+            <div className="w-full max-w-2xl flex flex-col relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 {/* Header & Progress */}
-                <div className="text-center space-y-4 mb-8">
+                <div className="text-center space-y-4 mb-4 shrink-0 mt-2 md:mt-6">
                     <h1 className="text-3xl font-extrabold tracking-tight text-text-main drop-shadow-sm">
                         Prática de conversa
                     </h1>
@@ -658,7 +939,7 @@ function PracticeContent() {
                 </div>
 
                 {/* Chat Area */}
-                <div className="space-y-6 flex-1 min-h-[300px] overflow-y-auto pb-4">
+                <div className="space-y-6 flex-1 px-1 md:px-2 pb-4">
                     {messages.map((msg, idx) => (
                         <div
                             key={idx}
@@ -686,16 +967,15 @@ function PracticeContent() {
                                         </button>
                                     )}
                                 </div>
-                                {msg.role === 'ai' && (msg.translation || msg.hint) && (
+                                {msg.role === 'ai' && (msg.translation || msg.hint || true) && (
                                     <div className="flex flex-col gap-2 pt-1">
-                                        {(msg.translation || msg.hint) && (
+                                        {(msg.translation || msg.hint || true) && (
                                             <div className="flex items-center justify-between border-t border-border/30 pt-2">
                                                 <div className="flex gap-4">
-                                                    {msg.translation && (
-                                                        <button onClick={() => toggleTranslation(idx)} className="text-xs font-medium text-primary hover:text-primary/80 transition-colors">
-                                                            {msg.showTranslation ? "Ocultar tradução" : "Ver tradução"}
-                                                        </button>
-                                                    )}
+                                                    <button onClick={() => toggleTranslation(idx)} disabled={msg.isLoadingTranslation} className="text-xs font-medium text-primary hover:text-primary/80 transition-colors flex items-center gap-1">
+                                                        {msg.isLoadingTranslation && <div className="w-3 h-3 border border-primary border-t-transparent rounded-full animate-spin"></div>}
+                                                        {msg.showTranslation ? "Ocultar tradução" : "Ver tradução"}
+                                                    </button>
                                                     {msg.hint && (
                                                         <button onClick={() => toggleHint(idx)} className="text-xs font-medium text-amber-500 hover:text-amber-500/80 transition-colors">
                                                             {msg.showHint ? "Ocultar dica" : "Hint"}
@@ -707,8 +987,24 @@ function PracticeContent() {
                                         {(msg.showTranslation || msg.showHint) && (
                                             <div className="flex flex-col gap-2">
                                                 {msg.showTranslation && (
-                                                    <div className="text-sm text-text-secondary italic animate-in fade-in">
-                                                        {msg.translation}
+                                                    <div className="flex flex-col gap-3 animate-in fade-in">
+                                                        <div className="text-sm text-text-secondary italic">
+                                                            "{msg.translation}"
+                                                        </div>
+                                                        {msg.vocabulary && msg.vocabulary.length > 0 && (
+                                                            <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
+                                                                <span className="text-xs font-bold text-primary uppercase tracking-wider mb-2 block">Vocabulário</span>
+                                                                <ul className="space-y-1.5 text-sm text-text-secondary">
+                                                                    {msg.vocabulary.map((v, i) => (
+                                                                        <li key={i} className="flex gap-2">
+                                                                            <span className="font-semibold text-text-main shrink-0">{v.word}</span>
+                                                                            <span className="text-text-secondary/50">=</span>
+                                                                            <span>{v.translation}</span>
+                                                                        </li>
+                                                                    ))}
+                                                                </ul>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
                                                 {msg.showHint && (
@@ -740,190 +1036,238 @@ function PracticeContent() {
                             </div>
                         </div>
                     ))}
-                    {isLoadingFeedback && (
-                        <div className="flex justify-end animate-pulse opacity-50">
-                            <div className="bg-primary text-white px-5 py-3 rounded-2xl rounded-br-sm shadow-sm">
-                                Analisando resposta...
+                    {isLoadingFeedback && finalLoadingState === 'idle' && (
+                        <div className="flex justify-start opacity-70 mb-2">
+                            <div className="text-xs text-text-secondary/60 italic px-2 flex items-center gap-1.5">
+                                <div className="w-2.5 h-2.5 border-2 border-primary/50 border-t-transparent rounded-full animate-spin"></div>
+                                Salvando progresso...
                             </div>
                         </div>
                     )}
-                </div>
 
-                {/* Feedback Card */}
-                {feedbackData && (
-                    <Card className="w-full p-6 space-y-4 border-primary/30 bg-primary/5 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        <h3 className="font-bold text-lg text-primary flex items-center gap-2">
-                            <span className="text-xl">✨</span> Feedback
-                        </h3>
-
-                        <div className="space-y-4">
-                            <div className="space-y-1">
-                                <span className="text-sm font-medium text-text-secondary uppercase tracking-wider">Correção</span>
-                                <div className="bg-card border border-border rounded-lg p-4 flex flex-col gap-2">
-                                    <span className="text-red-400 line-through decoration-red-400/50">
-                                        "{messages[messages.length - 1].content}"
-                                    </span>
-                                    <span className="text-green-400 font-medium">
-                                        "{feedbackData.correction}"
-                                    </span>
+                    {/* Two-stage final loading UI */}
+                    {finalLoadingState !== 'idle' && (
+                        <div className="flex justify-center mt-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                            <div className="bg-card/50 border border-primary/20 backdrop-blur-sm px-6 py-4 rounded-2xl flex flex-col items-center gap-3">
+                                <div className="relative w-8 h-8 flex items-center justify-center">
+                                    <div className="absolute inset-0 border-2 border-primary/30 rounded-full"></div>
+                                    <div className="absolute inset-0 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
                                 </div>
-                            </div>
-
-                            <div className="space-y-1">
-                                <span className="text-sm font-medium text-text-secondary uppercase tracking-wider">Opção mais natural</span>
-                                <div className="bg-card border border-border rounded-lg p-4 text-text-main italic">
-                                    "{feedbackData.natural}"
-                                </div>
-                            </div>
-
-                            <div className="bg-primary/10 rounded-lg p-3 text-sm text-text-main border border-primary/20">
-                                {feedbackData.shortFeedback}
-                            </div>
-
-                            <div className="flex flex-col gap-4 border-t border-border/50 pt-4">
-                                <div className="flex items-center justify-between">
-                                    <div className="space-y-0.5">
-                                        <span className="text-sm font-medium text-text-secondary uppercase tracking-wider">Nota</span>
-                                        <div className="text-2xl font-bold text-text-main">
-                                            {feedbackData.score}
-                                        </div>
-                                    </div>
-
-                                    <div className="text-right max-w-[60%]">
-                                        <p className="text-sm font-medium text-primary">
-                                            {(() => {
-                                                const scoreNum = parseInt(feedbackData.score.split('/')[0]) || 0;
-                                                if (scoreNum >= 9) return "Incrível! Sua resposta soou muito natural.";
-                                                if (scoreNum >= 7) return "Ótimo trabalho! Você está ficando mais fluente.";
-                                                if (scoreNum >= 5) return "Boa tentativa! Pequenos ajustes vão deixar sua resposta melhor.";
-                                                return "Bom esforço! Continue praticando e você vai melhorar rápido.";
-                                            })()}
-                                        </p>
-                                    </div>
-                                </div>
-
-                                {/* Repeat Sentence Section */}
-                                <div className="space-y-3 pt-4 border-t border-border/50">
-                                    <h4 className="text-sm font-semibold text-text-main flex items-center gap-2">
-                                        <span className="text-primary text-xl">🎙️</span>
-                                        Repeat the correct sentence
-                                    </h4>
-
-                                    <div className="bg-card/50 border border-border rounded-xl p-4 space-y-4">
-                                        <div className="flex items-start justify-between gap-4">
-                                            <p className="text-text-main font-medium leading-relaxed">
-                                                "{feedbackData.correction}"
-                                            </p>
-                                            <div className="flex gap-2 shrink-0">
-                                                <button
-                                                    onClick={() => speakText(feedbackData.correction)}
-                                                    className="p-2 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors flex items-center justify-center"
-                                                    title="Ouvir frase correta"
-                                                >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isSpeaking ? "animate-pulse" : ""}>
-                                                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-                                                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-                                                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
-                                                    </svg>
-                                                </button>
-                                                <button
-                                                    onClick={toggleRepeating}
-                                                    className={`p-2 rounded-full transition-colors flex items-center justify-center ${isRepeating
-                                                        ? "bg-red-500/20 text-red-500 hover:bg-red-500/30"
-                                                        : "bg-primary text-white hover:bg-primary/90 shadow-sm"
-                                                        }`}
-                                                    title="Repetir frase"
-                                                >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isRepeating ? "animate-pulse" : ""}>
-                                                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                                                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                                                        <line x1="12" x2="12" y1="19" y2="22" />
-                                                    </svg>
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        {repeatedText && (
-                                            <div className="pt-3 border-t border-border/50 animate-in fade-in slide-in-from-top-2">
-                                                <span className="text-xs uppercase font-bold text-text-secondary tracking-wider block mb-1">Você disse:</span>
-                                                <p className="text-text-main italic">"{repeatedText}"</p>
-                                            </div>
-                                        )}
-                                        {isRepeating && !repeatedText && (
-                                            <div className="pt-3 border-t border-border/50">
-                                                <p className="text-primary text-sm animate-pulse italic">Ouvindo...</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="flex items-center justify-between pt-2 border-t border-border/50">
-                                    <p className="text-sm font-medium text-text-secondary flex items-center gap-1.5">
-                                        Mantenha seu streak amanhã <span className="text-lg">🔥</span>
-                                    </p>
-                                    <Button variant="primary" onClick={handleNextQuestion} className="px-6 rounded-xl">
-                                        {currentStep < conversationSteps.length - 1 ? 'Próxima pergunta' : 'Ver resultado'}
-                                    </Button>
+                                <div className="text-sm font-medium text-text-main animate-pulse">
+                                    {finalLoadingState === 'stage1'
+                                        ? "Analisando suas respostas..."
+                                        : "Preparando seu resultado final..."}
                                 </div>
                             </div>
                         </div>
-                    </Card>
+                    )}
+
+                    <div ref={messagesEndRef} />
+                </div>
+
+                {/* Conversation Ended Action Bar */}
+                {isConversationEnded && finalLoadingState === 'idle' && (
+                    <div className="pt-8 pb-4 animate-in fade-in slide-in-from-bottom-6 duration-700 flex justify-center">
+                        <div className="bg-card w-full max-w-sm rounded-3xl p-8 flex flex-col items-center text-center gap-5 border border-border shadow-2xl relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary/20 via-primary to-primary/20"></div>
+
+                            <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center -mt-2">
+                                <span className="text-4xl animate-bounce-slight">🎉</span>
+                            </div>
+
+                            <div className="space-y-1">
+                                <h2 className="text-2xl font-black text-text-main tracking-tight">Conversa finalizada!</h2>
+                                <p className="text-sm text-text-secondary">Você mandou muito bem.</p>
+                            </div>
+
+                            <div className="bg-background/80 px-6 py-4 rounded-2xl border border-border/50 shadow-inner w-full mb-2">
+                                <span className="text-text-secondary text-sm font-semibold uppercase tracking-wider block mb-1">Média final</span>
+                                <span className="text-primary font-black text-4xl">
+                                    {scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0}/10
+                                </span>
+                            </div>
+
+                            {!showFullReview && (
+                                <Button
+                                    onClick={handleShowReview}
+                                    className="w-full rounded-xl py-6 text-lg font-bold shadow-[0_0_20px_rgba(var(--primary),0.3)] hover:scale-[1.02] transition-transform"
+                                >
+                                    Ver minha avaliação completa
+                                </Button>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Full Review Render (End of Conversation) */}
+                {showFullReview && (
+                    <div id="full-review-section" className="px-1 md:px-2 pb-8 space-y-8 animate-in mt-4 md:mt-8 fade-in slide-in-from-bottom-8 duration-500">
+                        <div className="flex items-center justify-between border-b border-border/50 pb-4">
+                            <h3 className="font-bold text-xl text-primary flex items-center gap-2">
+                                <span className="text-2xl">✨</span> Avaliação Completa
+                            </h3>
+                            <div className="bg-card px-4 py-2 rounded-lg border border-border shadow-sm">
+                                <span className="text-text-secondary text-sm font-medium mr-2">Média final:</span>
+                                <span className="text-text-main font-bold text-lg">
+                                    {scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0}/10
+                                </span>
+                            </div>
+                        </div>
+
+                        {turnFeedbacks.map((fb, index) => {
+                            if (!fb) return null;
+                            const scoreNum = parseInt(fb.score.split('/')[0]) || 0;
+                            const userMsgIndex = index * 2 + 1;
+                            const userMsg = messages[userMsgIndex]?.content || "";
+
+                            return (
+                                <Card key={`fb-${index}`} className="w-full p-6 space-y-4 border-l-4 border-l-primary/50 bg-primary/5">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm font-bold text-text-secondary uppercase tracking-wider">Turno {index + 1}</span>
+                                        <div className="text-xl font-bold text-text-main">{fb.score}</div>
+                                    </div>
+
+                                    {scoreNum >= 9 ? (
+                                        <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4 flex items-center gap-3">
+                                            <span className="text-2xl">✅</span>
+                                            <p className="text-green-400 font-medium text-lg pt-0.5">Ótima resposta! Sua frase está correta e natural.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-1">
+                                            <span className="text-sm font-medium text-text-secondary uppercase tracking-wider">Correção</span>
+                                            <div className="bg-card border border-border rounded-lg p-4 flex flex-col gap-2">
+                                                <span className="text-red-400 line-through decoration-red-400/50">"{userMsg}"</span>
+                                                <span className="text-green-400 font-medium">"{fb.correction}"</span>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {scoreNum <= 8 && (
+                                        <div className="space-y-1">
+                                            <span className="text-sm font-medium text-text-secondary uppercase tracking-wider">
+                                                {scoreNum >= 7 ? "Outra forma comum de dizer isso" : "Opção mais natural"}
+                                            </span>
+                                            <div className="bg-card border border-border rounded-lg p-4 text-text-main italic">
+                                                "{fb.natural}"
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {scoreNum <= 8 && fb.shortFeedback && (
+                                        <div className="bg-primary/10 rounded-lg p-3 text-sm text-text-main border border-primary/20">
+                                            {fb.shortFeedback}
+                                        </div>
+                                    )}
+
+                                    {/* Repeat Sentence Section */}
+                                    <div className="space-y-3 pt-4 border-t border-border/50">
+                                        <h4 className="text-sm font-semibold text-text-main flex items-center gap-2">
+                                            <span className="text-primary text-xl">🎙️</span> Repeat the correct sentence
+                                        </h4>
+                                        <div className="bg-card/50 border border-border rounded-xl p-4 space-y-4">
+                                            <div className="flex items-start justify-between gap-4">
+                                                <p className="text-text-main font-medium leading-relaxed">"{fb.correction}"</p>
+                                                <button
+                                                    onClick={() => speakText(fb.correction)}
+                                                    className="p-2 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors flex items-center justify-center shrink-0"
+                                                    title="Ouvir frase correta"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </Card>
+                            );
+                        })}
+
+                        <div className="flex items-center justify-between pt-8 border-t border-border/50">
+                            <p className="text-sm font-medium text-text-secondary flex items-center gap-1.5">
+                                Mantenha seu streak amanhã <span className="text-lg">🔥</span>
+                            </p>
+                            <Button variant="primary" onClick={handleFinishReview} className="px-8 rounded-xl py-6 text-lg shadow-lg">
+                                Finalizar
+                            </Button>
+                        </div>
+                    </div>
                 )}
 
                 {/* Input Area */}
-                {!feedbackData && !isLoadingFeedback && (
-                    <div className="pt-4 border-t border-border/30 space-y-2">
-                        <form onSubmit={handleSendMessage} className="flex gap-3 relative">
-                            <Button
-                                type="button"
-                                variant="secondary"
-                                className={`px-4 rounded-xl shrink-0 transition-all duration-300 ${isListening
-                                    ? "bg-red-500/20 text-red-500 border-red-500/50 hover:bg-red-500/30 animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.2)]"
-                                    : "text-text-secondary hover:text-text-main"
-                                    }`}
-                                onClick={toggleListening}
-                                title="Falar em inglês"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isListening ? "scale-110 transition-transform" : "transition-transform"}>
-                                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                                    <line x1="12" x2="12" y1="19" y2="22" />
-                                </svg>
-                            </Button>
+                {!isConversationEnded && !showFullReview && finalLoadingState === 'idle' && (
+                    <div className="pt-4 border-t border-border/30 space-y-4 shrink-0 mb-2">
 
-                            <Input
-                                placeholder={isListening ? "Ouvindo..." : "Digite sua resposta em inglês..."}
-                                value={inputValue}
-                                onChange={(e) => setInputValue(e.target.value)}
-                                className="flex-1"
-                                autoFocus
-                            />
+                        {!isTypingMode ? (
+                            <div className="flex flex-col items-center gap-3 w-full animate-in fade-in slide-in-from-bottom-2 pt-2">
+                                <Button
+                                    type="button"
+                                    onClick={toggleListening}
+                                    variant="secondary"
+                                    className={`w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300 shadow-lg ${isListening
+                                        ? "bg-red-500/20 text-red-500 border-red-500/50 hover:bg-red-500/30 animate-pulse shadow-[0_0_25px_rgba(239,68,68,0.25)] scale-105"
+                                        : "bg-primary text-white border-primary/50 hover:bg-primary/90 shadow-[0_0_15px_rgba(var(--primary),0.3)] hover:scale-105"
+                                        }`}
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isListening ? "scale-110 transition-transform" : "transition-transform"}>
+                                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                                        <line x1="12" x2="12" y1="19" y2="22" />
+                                    </svg>
+                                </Button>
 
-                            <Button
-                                type="submit"
-                                variant="primary"
-                                className="px-8 rounded-xl shrink-0 flex items-center justify-center min-w-[140px]"
-                                disabled={!inputValue.trim() || isListening || isLoadingFeedback}
-                            >
-                                {isLoadingFeedback ? (
-                                    <>
-                                        <div className="w-4 h-4 border-2 border-white/80 border-t-transparent rounded-full animate-spin mr-2"></div>
-                                        Checking...
-                                    </>
-                                ) : (
-                                    "Enviar"
-                                )}
-                            </Button>
-                        </form>
+                                <span className="text-sm font-medium text-text-secondary/80 tracking-wide mt-1">
+                                    {isListening ? "Ouvindo..." : "Toque para falar"}
+                                </span>
+
+                                <button
+                                    onClick={() => setIsTypingMode(true)}
+                                    className="text-text-secondary hover:text-white transition-colors text-xs font-medium flex items-center gap-1.5 py-1.5 px-4 rounded-full hover:bg-white/5 mt-1"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7V4h16v3" /><path d="M9 20h6" /><path d="M12 4v16" /></svg>
+                                    Digitar resposta
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col gap-3 w-full animate-in fade-in slide-in-from-bottom-2">
+                                <form onSubmit={handleSendMessage} className="flex gap-3 relative w-full">
+                                    <Input
+                                        placeholder={isListening ? "Ouvindo..." : "Digite sua resposta em inglês..."}
+                                        value={inputValue}
+                                        onChange={(e) => setInputValue(e.target.value)}
+                                        className="flex-1"
+                                        autoFocus
+                                    />
+
+                                    <Button
+                                        type="submit"
+                                        variant="primary"
+                                        className="px-8 rounded-xl shrink-0 flex items-center justify-center min-w-[120px]"
+                                        disabled={!inputValue.trim() || isListening || isLoadingFeedback}
+                                    >
+                                        {isLoadingFeedback ? (
+                                            <div className="w-5 h-5 border-2 border-white/80 border-t-transparent rounded-full animate-spin"></div>
+                                        ) : (
+                                            "Enviar"
+                                        )}
+                                    </Button>
+                                </form>
+                                <button
+                                    onClick={() => setIsTypingMode(false)}
+                                    className="text-text-secondary hover:text-white transition-colors text-sm font-medium self-center flex items-center gap-2 py-2 px-4 rounded-full hover:bg-white/5"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" x2="12" y1="19" y2="22" /></svg>
+                                    Voltar para fala
+                                </button>
+                            </div>
+                        )}
 
                         {/* Error Message for Speech Recognition / Synthesis */}
                         {(recognitionError || synthesisError) && (
-                            <p className="text-red-400 text-xs pl-2 animate-in fade-in duration-300">
+                            <p className="text-red-400 text-xs pl-2 animate-in fade-in duration-300 text-center">
                                 {recognitionError || synthesisError}
                             </p>
                         )}
                         {!recognitionSupported && !recognitionError && (
-                            <p className="text-text-secondary/50 text-xs pl-2">
+                            <p className="text-text-secondary/50 text-xs pl-2 text-center">
                                 Reconhecimento de voz não disponível neste navegador.
                             </p>
                         )}

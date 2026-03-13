@@ -106,7 +106,7 @@ export default function Result() {
                         const dates = new Set(allRecentSessions.map(p => p.created_at.split('T')[0]));
                         const todayStr = new Date().toISOString().split("T")[0];
 
-                        let checkDate = new Date();
+                        const checkDate = new Date();
                         // If they haven't practiced today, but practiced yesterday, start checking from yesterday
                         if (!dates.has(todayStr)) {
                             checkDate.setDate(checkDate.getDate() - 1);

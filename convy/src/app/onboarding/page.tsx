@@ -33,7 +33,7 @@ const playSuccessSound = () => {
         // Play subtle positive chime: E5 -> G#5
         playNote(659.25, 0);
         playNote(830.61, 0.15);
-    } catch (e) {
+    } catch {
         // Ignore audio errors
     }
 };

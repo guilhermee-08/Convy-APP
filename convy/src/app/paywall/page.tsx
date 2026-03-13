@@ -63,7 +63,7 @@ export default function Paywall() {
                 const yesterdayStr = yesterdayObj.toISOString().split("T")[0];
 
                 let currentStreak = 0;
-                let checkDate = new Date(todayObj);
+                const checkDate = new Date(todayObj);
 
                 if (datesSet.has(todayStr) || datesSet.has(yesterdayStr)) {
                     if (!datesSet.has(todayStr)) {

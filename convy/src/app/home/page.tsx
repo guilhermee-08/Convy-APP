@@ -77,43 +77,32 @@ export default function Home() {
                 setLastScore(practices[0].score);
                 lastPracticedSituationId = practices[0].situation_id;
 
-                const datesArray = Array.from(new Set(practices.map(p => p.created_at.split('T')[0]))).sort((a, b) => b.localeCompare(a)); // chronological
-                const datesSet = new Set(datesArray);
+                // Ensure local timezone dates are used instead of UTC string split
+                const datesArray = Array.from(new Set(practices.map(p => {
+                    const localDate = new Date(p.created_at);
+                    localDate.setHours(0, 0, 0, 0);
+                    // Avoid timezone shift formatting by doing manual local YYYY-MM-DD
+                    const year = localDate.getFullYear();
+                    const month = String(localDate.getMonth() + 1).padStart(2, '0');
+                    const day = String(localDate.getDate()).padStart(2, '0');
+                    return `${year}-${month}-${day}`;
+                }))).sort((a, b) => b.localeCompare(a)); // chronological descending
 
                 const todayObj = new Date();
                 todayObj.setHours(0, 0, 0, 0);
-                const todayStr = todayObj.toISOString().split("T")[0];
 
-                const yesterdayObj = new Date(todayObj);
-                yesterdayObj.setDate(yesterdayObj.getDate() - 1);
-                const yesterdayStr = yesterdayObj.toISOString().split("T")[0];
-
-                // Calculate Current Streak
-                let currentStreak = 0;
-                let checkDate = new Date(todayObj);
-
-                if (datesSet.has(todayStr) || datesSet.has(yesterdayStr)) {
-                    if (!datesSet.has(todayStr)) {
-                        checkDate.setDate(checkDate.getDate() - 1);
-                    }
-                    while (datesSet.has(checkDate.toISOString().split("T")[0])) {
-                        currentStreak++;
-                        checkDate.setDate(checkDate.getDate() - 1);
-                    }
-                }
-                setStreak(currentStreak);
-
-                // Calculate Best Streak
+                // Calculate Best Streak and Current Streak from history
                 let maxStreak = 0;
                 let currentRun = 0;
                 let lastDateInRun: Date | null = null;
 
-                for (let i = 0; i < datesArray.length; i++) {
+                // Array is sorted newest to oldest. We iterate oldest to newest by reversing or just traversing from end.
+                for (let i = datesArray.length - 1; i >= 0; i--) {
                     const d = new Date(datesArray[i] + 'T00:00:00');
                     if (!lastDateInRun) {
                         currentRun = 1;
                     } else {
-                        const diffDays = Math.round((d.getTime() - lastDateInRun.getTime()) / (1000 * 3600 * 24));
+                        const diffDays = Math.round(Math.abs(d.getTime() - lastDateInRun.getTime()) / (1000 * 3600 * 24));
                         if (diffDays === 1) {
                             currentRun++;
                         } else if (diffDays > 1) {
@@ -123,6 +112,17 @@ export default function Home() {
                     if (currentRun > maxStreak) maxStreak = currentRun;
                     lastDateInRun = d;
                 }
+
+                // If user missed practicing yesterday and today, current streak resets to 0 visually
+                let finalCurrentStreak = currentRun;
+                if (lastDateInRun) {
+                    const diffFromToday = Math.round(Math.abs(todayObj.getTime() - lastDateInRun.getTime()) / (1000 * 3600 * 24));
+                    if (diffFromToday > 1) {
+                        finalCurrentStreak = 0;
+                    }
+                }
+
+                setStreak(finalCurrentStreak);
                 setBestStreak(maxStreak);
             }
 
@@ -307,7 +307,7 @@ export default function Home() {
 
                                         <div className="mt-2 flex flex-col items-center gap-2">
                                             <p className="text-xs text-text-secondary/80 font-medium italic text-center max-w-[180px]">
-                                                "Treine hoje para não perder sua sequência."
+                                                &quot;Treine hoje para não perder sua sequência.&quot;
                                             </p>
 
                                             <div className="w-[80%] h-px bg-border/50 my-1"></div>
