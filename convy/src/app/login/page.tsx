@@ -52,79 +52,23 @@ export default function Login() {
     };
 
     useEffect(() => {
-        const checkUser = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-
-            if (session?.user) {
-                const user = session.user;
-
-                // Sync onboarding data if exists
-                if (typeof window !== "undefined") {
-                    const pendingOnboardingStr = localStorage.getItem('pendingOnboarding');
-                    if (pendingOnboardingStr) {
-                        try {
-                            const answers = JSON.parse(pendingOnboardingStr);
-                            await supabase.from('profiles').upsert({
-                                id: user.id,
-                                email: user.email,
-                                level: answers.level,
-                                main_situation: answers.main_situation,
-                                onboarding_completed: true
-                            });
-                            localStorage.removeItem('pendingOnboarding');
-                            router.push('/home');
-                            return;
-                        } catch (e) {
-                            console.error("Erro ao salvar onboarding", e);
-                        }
-                    }
-                }
-
-                // Check if profile exists
-                const { data: profile, error: profileError } = await supabase
-                    .from('profiles')
-                    .select('onboarding_completed')
-                    .eq('id', user.id)
-                    .single();
-
-                if (profileError || !profile) {
-                    // Create profile if it doesn't exist
-                    const { error: insertError } = await supabase
-                        .from('profiles')
-                        .insert([
-                            {
-                                id: user.id,
-                                email: user.email,
-                                onboarding_completed: false
+        // Simple session bouncer: if they are already fully logged in and try to visit /login manually, send them away.
+        // We do NOT process onboarding here anymore, to avoid racing with /auth/callback.
+        if (typeof window !== "undefined" && !window.location.hash.includes("access_token")) {
+            supabase.auth.getSession().then(({ data: { session } }) => {
+                if (session) {
+                    supabase.from('profiles').select('onboarding_completed')
+                        .eq('id', session.user.id).single()
+                        .then(({ data }) => {
+                            if (data?.onboarding_completed) {
+                                router.push('/home');
+                            } else {
+                                router.push('/onboarding');
                             }
-                        ]);
-
-                    if (!insertError) {
-                        router.push('/onboarding');
-                    }
-                } else {
-                    // Profile exists, check onboarding status
-                    if (profile.onboarding_completed) {
-                        router.push('/home');
-                    } else {
-                        router.push('/onboarding');
-                    }
+                        });
                 }
-            }
-        };
-
-        checkUser();
-
-        // Listen for auth state changes (e.g., when the magic link is clicked)
-        const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-            if (event === 'SIGNED_IN' && session) {
-                checkUser();
-            }
-        });
-
-        return () => {
-            authListener.subscription.unsubscribe();
-        };
+            });
+        }
     }, [router]);
 
     return (

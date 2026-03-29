@@ -70,9 +70,11 @@ type Message = {
 
 type FeedbackData = {
     correction: string;
-    natural: string;
-    score: string;
-    shortFeedback: string;
+    natural?: string;
+    score: number | string;
+    feedback: string;
+    tip: string;
+    microFeedback?: string;
 } | null;
 
 function PracticeContent() {
@@ -335,48 +337,8 @@ function PracticeContent() {
         }
     }, [messages]);
 
-    const toggleTranslation = async (idx: number) => {
-        const msg = messages[idx];
-        if (!msg) return;
-
-        // If it's already showing, just hide it
-        if (msg.showTranslation) {
-            setMessages(prev => prev.map((m, i) => i === idx ? { ...m, showTranslation: false } : m));
-            return;
-        }
-
-        // If we don't have a vocabulary breakdown yet, fetch it
-        if (!msg.vocabulary) {
-            setMessages(prev => prev.map((m, i) => i === idx ? { ...m, isLoadingTranslation: true } : m));
-
-            try {
-                const response = await fetch('/api/translate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: msg.content })
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    setMessages(prev => prev.map((m, i) => i === idx ? {
-                        ...m,
-                        translation: data.translation,
-                        vocabulary: data.vocabulary,
-                        isLoadingTranslation: false,
-                        showTranslation: true
-                    } : m));
-                } else {
-                    // Fallback to just showing whatever translation we had
-                    setMessages(prev => prev.map((m, i) => i === idx ? { ...m, isLoadingTranslation: false, showTranslation: true } : m));
-                }
-            } catch (error) {
-                console.error("Translation fetch error:", error);
-                setMessages(prev => prev.map((m, i) => i === idx ? { ...m, isLoadingTranslation: false, showTranslation: true } : m));
-            }
-        } else {
-            // We already have it, just show it
-            setMessages(prev => prev.map((m, i) => i === idx ? { ...m, showTranslation: true } : m));
-        }
+    const toggleTranslation = (idx: number) => {
+        setMessages(prev => prev.map((msg, i) => i === idx ? { ...msg, showTranslation: !msg.showTranslation } : msg));
     };
 
     const toggleHint = (idx: number) => {
@@ -596,7 +558,7 @@ function PracticeContent() {
                     return next;
                 });
 
-                const numericScore = parseInt(data.score.split('/')[0]) || 0;
+                const numericScore = parseInt(String(data.score).split('/')[0]) || 0;
                 setScores(prev => [...prev, numericScore]);
             } else {
                 console.error("Feedback error for turn", currentTurnIndex);
@@ -806,7 +768,7 @@ function PracticeContent() {
 
                         <div className="space-y-1 relative z-10">
                             <h2 className="text-3xl font-black text-text-main tracking-tight drop-shadow-sm">
-                                Missão concluída!
+                                🔥 Você já consegue se comunicar em inglês
                             </h2>
                             <p className="text-text-secondary font-medium">Prática registrada com sucesso.</p>
                         </div>
@@ -972,13 +934,14 @@ function PracticeContent() {
                                         {(msg.translation || msg.hint || true) && (
                                             <div className="flex items-center justify-between border-t border-border/30 pt-2">
                                                 <div className="flex gap-4">
-                                                    <button onClick={() => toggleTranslation(idx)} disabled={msg.isLoadingTranslation} className="text-xs font-medium text-primary hover:text-primary/80 transition-colors flex items-center gap-1">
-                                                        {msg.isLoadingTranslation && <div className="w-3 h-3 border border-primary border-t-transparent rounded-full animate-spin"></div>}
-                                                        {msg.showTranslation ? "Ocultar tradução" : "Ver tradução"}
-                                                    </button>
+                                                    {msg.translation && (
+                                                        <button onClick={() => toggleTranslation(idx)} className="text-xs font-medium text-primary hover:text-primary/80 transition-colors flex items-center gap-1">
+                                                            {msg.showTranslation ? "Ocultar tradução" : "Ver tradução"}
+                                                        </button>
+                                                    )}
                                                     {msg.hint && (
                                                         <button onClick={() => toggleHint(idx)} className="text-xs font-medium text-amber-500 hover:text-amber-500/80 transition-colors">
-                                                            {msg.showHint ? "Ocultar dica" : "Hint"}
+                                                            {msg.showHint ? "Ocultar dica" : "Ver dica"}
                                                         </button>
                                                     )}
                                                 </div>
@@ -1013,8 +976,10 @@ function PracticeContent() {
                                                             <span className="font-semibold text-amber-500">💡 Dica</span>
                                                             <button
                                                                 onClick={() => {
-                                                                    const textToSpeak = msg.hint ? (msg.hint.includes(":") ? msg.hint.split(":").slice(1).join(":").trim() : msg.hint) : "";
-                                                                    speakText(textToSpeak);
+                                                                    if (!msg.hint) return;
+                                                                    let cleaned = msg.hint.replace(/^(Dica:|💡 Dica:|💡|Try:|Try saying:|You can say:|You could say:|Você pode dizer:|say:?)/i, "").trim();
+                                                                    if (/^["'].*["']$/.test(cleaned)) { cleaned = cleaned.substring(1, cleaned.length - 1).trim(); }
+                                                                    speakText(cleaned);
                                                                 }}
                                                                 className="p-1 rounded-full text-amber-500 hover:bg-amber-500/20 transition-colors flex items-center justify-center -mr-1"
                                                                 title="Ouvir dica"
@@ -1026,7 +991,14 @@ function PracticeContent() {
                                                                 </svg>
                                                             </button>
                                                         </div>
-                                                        <div className="text-text-main/90 leading-relaxed">{msg.hint}</div>
+                                                        <div className="text-text-main/90 leading-relaxed font-medium">
+                                                            <span className="text-text-secondary/80 italic block mb-1">Você pode dizer:</span>
+                                                            "{msg.hint ? (() => {
+                                                                let cleaned = msg.hint.replace(/^(Dica:|💡 Dica:|💡|Try:|Try saying:|You can say:|You could say:|Você pode dizer:|say:?)/i, "").trim();
+                                                                if (/^["'].*["']$/.test(cleaned)) { cleaned = cleaned.substring(1, cleaned.length - 1).trim(); }
+                                                                return cleaned;
+                                                            })() : ""}"
+                                                        </div>
                                                     </div>
                                                 )}
                                             </div>
@@ -1080,10 +1052,13 @@ function PracticeContent() {
                                 <p className="text-sm text-text-secondary">Você mandou muito bem.</p>
                             </div>
 
-                            <div className="bg-background/80 px-6 py-4 rounded-2xl border border-border/50 shadow-inner w-full mb-2">
+                            <div className="bg-background/80 px-6 py-4 rounded-2xl border border-border/50 shadow-inner w-full mb-2 flex flex-col items-center">
                                 <span className="text-text-secondary text-sm font-semibold uppercase tracking-wider block mb-1">Média final</span>
                                 <span className="text-primary font-black text-4xl">
                                     {scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0}/10
+                                </span>
+                                <span className="text-sm font-medium text-text-main text-center block mt-2">
+                                    {scores.length > 0 && Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) >= 7 ? "Bom! Você já se comunica 👍" : "Continue praticando, você está no caminho! 💪"}
                                 </span>
                             </div>
 
@@ -1116,7 +1091,7 @@ function PracticeContent() {
 
                         {turnFeedbacks.map((fb, index) => {
                             if (!fb) return null;
-                            const scoreNum = parseInt(fb.score.split('/')[0]) || 0;
+                            const scoreNum = parseInt(String(fb.score).split('/')[0]) || 0;
                             const userMsgIndex = index * 2 + 1;
                             const userMsg = messages[userMsgIndex]?.content || "";
 
@@ -1124,40 +1099,45 @@ function PracticeContent() {
                                 <Card key={`fb-${index}`} className="w-full p-6 space-y-4 border-l-4 border-l-primary/50 bg-primary/5">
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm font-bold text-text-secondary uppercase tracking-wider">Turno {index + 1}</span>
-                                        <div className="text-xl font-bold text-text-main">{fb.score}</div>
+                                        <div className="text-xl font-bold text-text-main">{scoreNum}/10</div>
                                     </div>
 
-                                    {scoreNum >= 9 ? (
-                                        <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4 flex items-center gap-3">
-                                            <span className="text-2xl">✅</span>
-                                            <p className="text-green-400 font-medium text-lg pt-0.5">Ótima resposta! Sua frase está correta e natural.</p>
-                                        </div>
-                                    ) : (
+                                    <div className="space-y-4 pt-2">
                                         <div className="space-y-1">
-                                            <span className="text-sm font-medium text-text-secondary uppercase tracking-wider">Correção</span>
-                                            <div className="bg-card border border-border rounded-lg p-4 flex flex-col gap-2">
-                                                <span className="text-red-400 line-through decoration-red-400/50">"{userMsg}"</span>
-                                                <span className="text-green-400 font-medium">"{fb.correction}"</span>
+                                            <span className="text-sm font-medium text-text-secondary uppercase tracking-wider block">👍 O que você fez bem</span>
+                                            <div className="bg-green-500/10 text-green-400 border border-green-500/20 rounded-lg p-3 font-medium">
+                                                {fb.feedback}
                                             </div>
                                         </div>
-                                    )}
 
-                                    {scoreNum <= 8 && (
-                                        <div className="space-y-1">
-                                            <span className="text-sm font-medium text-text-secondary uppercase tracking-wider">
-                                                {scoreNum >= 7 ? "Outra forma comum de dizer isso" : "Opção mais natural"}
-                                            </span>
-                                            <div className="bg-card border border-border rounded-lg p-4 text-text-main italic">
-                                                "{fb.natural}"
+                                        {scoreNum < 9 && (
+                                            <div className="space-y-1">
+                                                <span className="text-sm font-medium text-text-secondary uppercase tracking-wider block">❌ Correção</span>
+                                                <div className="bg-card border border-border rounded-lg p-4 flex flex-col gap-2">
+                                                    <span className="text-red-400 line-through decoration-red-400/50">"{userMsg}"</span>
+                                                    <span className="text-green-400 font-medium">"{fb.correction}"</span>
+                                                </div>
                                             </div>
-                                        </div>
-                                    )}
+                                        )}
 
-                                    {scoreNum <= 8 && fb.shortFeedback && (
-                                        <div className="bg-primary/10 rounded-lg p-3 text-sm text-text-main border border-primary/20">
-                                            {fb.shortFeedback}
-                                        </div>
-                                    )}
+                                        {scoreNum <= 8 && (
+                                            <div className="space-y-1">
+                                                <span className="text-sm font-medium text-text-secondary uppercase tracking-wider block">💡 Versão mais natural</span>
+                                                <div className="bg-card border border-border rounded-lg p-4 text-text-main italic">
+                                                    "{fb.natural}"
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {fb.tip && (
+                                            <div className="space-y-1">
+                                                <span className="text-sm font-medium text-text-secondary uppercase tracking-wider block">🧠 Dica rápida</span>
+                                                <div className="bg-primary/10 rounded-lg p-3 text-sm text-text-main border border-primary/20">
+                                                    {fb.tip}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
 
                                     {/* Repeat Sentence Section */}
                                     <div className="space-y-3 pt-4 border-t border-border/50">
@@ -1186,7 +1166,7 @@ function PracticeContent() {
                                 Mantenha seu streak amanhã <span className="text-lg">🔥</span>
                             </p>
                             <Button variant="primary" onClick={handleFinishReview} className="px-8 rounded-xl py-6 text-lg shadow-lg">
-                                Finalizar
+                                Praticar novamente 🔁
                             </Button>
                         </div>
                     </div>
