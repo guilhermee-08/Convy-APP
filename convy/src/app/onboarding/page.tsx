@@ -52,7 +52,7 @@ export default function Onboarding() {
         if (typeof window !== "undefined") {
             localStorage.setItem("pendingOnboarding", JSON.stringify(finalAnswers));
         }
-        router.push('/login?from=onboarding');
+        router.push('/signup?from=onboarding');
     };
 
     const stepData = ONBOARDING_STEPS[currentStep];

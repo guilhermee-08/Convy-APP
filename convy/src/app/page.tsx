@@ -51,11 +51,17 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-6">
+        <div className="flex flex-col items-center justify-center gap-4 pt-6">
           <Link href="/demo" className="w-full sm:w-auto">
             <Button variant="primary" className="w-full sm:w-auto text-lg px-8 h-14 rounded-xl">
               Começar a falar agora (1 min)
             </Button>
+          </Link>
+          <Link
+            href="/login"
+            className="text-text-secondary hover:text-text-main transition-colors text-[15px] font-medium px-4 py-2 rounded-lg hover:bg-white/5 active:scale-95"
+          >
+            Já tenho conta — Entrar
           </Link>
         </div>
       </Card>

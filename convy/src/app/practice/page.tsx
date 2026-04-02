@@ -488,6 +488,42 @@ function PracticeContent() {
     const submitMessage = async (text: string, isVoice: boolean = false) => {
         setIsVoiceResponse(isVoice);
 
+        // Pre-flight check: If this is the absolute first message of the conversation, log it.
+        // We do not log strictly upon entering the page, but when the user ACTUALLY speaks.
+        if (currentStep === 0) {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user) {
+                const { data: profile } = await supabase
+                    .from("profiles")
+                    .select("is_premium, practice_count_today, last_practice_date")
+                    .eq("id", session.user.id)
+                    .single();
+
+                if (profile) {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const todayStr = today.toISOString().split("T")[0];
+
+                    let newCount = profile.last_practice_date === todayStr ? profile.practice_count_today : 0;
+
+                    if (!profile.is_premium && newCount >= 2) {
+                        alert("Você atingiu o limite de conversas gratuitas por dia. Volte amanhã para continuar praticando!");
+                        router.push('/home');
+                        return; // Halt message submission strictly!
+                    }
+
+                    // Valid intercept. Increment immediately. 
+                    // This protects against browser refreshes exploiting endless step1 conversations.
+                    await supabase.from("profiles")
+                        .update({
+                            practice_count_today: newCount + 1,
+                            last_practice_date: todayStr
+                        })
+                        .eq('id', session.user.id);
+                }
+            }
+        }
+
         let nextStep = currentStep;
         let isFinal = false;
 
@@ -522,9 +558,6 @@ function PracticeContent() {
         setInputValue("");
 
         if (isFinal) {
-            // Fill progress bar for the final state
-            setCurrentStep(3);
-
             // Start the two-stage loading flow immediately
             setFinalLoadingState("stage1");
 
@@ -696,9 +729,7 @@ function PracticeContent() {
 
                 // Update Profile
                 const updates = {
-                    ...profile,
                     last_practice_date: todayStr,
-                    practice_count_today: profile.last_practice_date === todayStr ? profile.practice_count_today + 1 : 1,
                     xp: (profile.xp || 0) + earnedXp
                 };
 

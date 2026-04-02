@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { supabase } from "@/lib/supabase";
+import { ensureProfileExists } from "@/lib/profile";
 
 type Situation = {
     id: string;
@@ -41,6 +42,8 @@ export default function Home() {
                 router.push("/login");
                 return;
             }
+
+            await ensureProfileExists(session.user);
 
             // 1. Check Profile for Practice Limits and fetch XP
             const { data: profile } = await supabase

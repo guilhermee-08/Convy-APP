@@ -34,6 +34,14 @@ export default function AuthCallback() {
                 // Auth successful, handle synchronization
                 const user = session.user;
 
+                // Identify if this is a password reset recovery link
+                const isRecovery = typeof window !== "undefined" && window.location.hash.includes("type=recovery");
+
+                if (isRecovery) {
+                    router.push('/reset-password');
+                    return;
+                }
+
                 if (typeof window !== "undefined") {
                     const pendingOnboardingStr = localStorage.getItem('pendingOnboarding');
                     if (pendingOnboardingStr) {
