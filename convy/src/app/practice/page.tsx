@@ -124,6 +124,7 @@ function PracticeContent() {
     const [showStreakAnimation, setShowStreakAnimation] = useState(false);
     const [oldStreak, setOldStreak] = useState(0);
     const [newStreak, setNewStreak] = useState(0);
+    const [currentStreak, setCurrentStreak] = useState(0);
 
     const [limitReached, setLimitReached] = useState(false);
     const [isVoiceResponse, setIsVoiceResponse] = useState(false);
@@ -367,6 +368,48 @@ function PracticeContent() {
                     setIsPageLoading(false);
                     return;
                 }
+            }
+
+            // Sync User's Historical Streak immediately for motivation mapping
+            try {
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const { data: practices } = await supabase
+                    .from('practice_sessions')
+                    .select('created_at')
+                    .eq('user_id', session.user.id)
+                    .order('created_at', { ascending: false });
+
+                let calculatedStreak = 0;
+                if (practices && practices.length > 0) {
+                    const datesArray = Array.from(new Set(practices.map(p => {
+                        const localDate = new Date(p.created_at);
+                        localDate.setHours(0, 0, 0, 0);
+                        return `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, '0')}-${String(localDate.getDate()).padStart(2, '0')}`;
+                    }))).sort((a, b) => b.localeCompare(a));
+
+                    let currentRun = 0;
+                    let lastDateInRun: Date | null = null;
+                    for (let i = datesArray.length - 1; i >= 0; i--) {
+                        const d = new Date(datesArray[i] + 'T00:00:00');
+                        if (!lastDateInRun) {
+                            currentRun = 1;
+                        } else {
+                            const diffDays = Math.round(Math.abs(d.getTime() - lastDateInRun.getTime()) / (1000 * 3600 * 24));
+                            if (diffDays === 1) currentRun++;
+                            else if (diffDays > 1) currentRun = 1;
+                        }
+                        lastDateInRun = d;
+                    }
+                    if (lastDateInRun) {
+                        const diffFromToday = Math.round(Math.abs(today.getTime() - lastDateInRun.getTime()) / (1000 * 3600 * 24));
+                        if (diffFromToday > 1) currentRun = 0;
+                    }
+                    calculatedStreak = currentRun;
+                }
+                setCurrentStreak(calculatedStreak);
+            } catch (e) {
+                console.error("Historical streak calc load failed:", e);
             }
 
             if (situationId) {
@@ -1194,7 +1237,9 @@ function PracticeContent() {
 
                         <div className="flex items-center justify-between pt-8 border-t border-border/50">
                             <p className="text-sm font-medium text-text-secondary flex items-center gap-1.5">
-                                Mantenha seu streak amanhã <span className="text-lg">🔥</span>
+                                {currentStreak === 0
+                                    ? "Volte amanhã e comece um streak de 1 dia"
+                                    : `Volte amanhã e leve seu streak pra ${currentStreak + 1} dias`} <span className="text-lg">🔥</span>
                             </p>
                             <Button variant="primary" onClick={handleFinishReview} className="px-8 rounded-xl py-6 text-lg shadow-lg">
                                 Praticar novamente 🔁

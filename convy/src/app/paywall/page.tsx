@@ -7,11 +7,28 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 
 const BENEFITS = [
-    "Conversas ilimitadas",
-    "Correções inteligentes",
-    "Treinar quantas vezes quiser",
-    "Todas as situações desbloqueadas"
+    "Pratique sem limite diário",
+    "Treine quantas vezes quiser, quando quiser"
 ];
+
+const getFeedbackByScore = (score: number) => {
+    if (score >= 8) {
+        return {
+            title: "🔥 Você começou muito bem!",
+            message: `Você tirou ${score}/10 — está muito perto da fluência. Agora imagine falando assim todos os dias.`
+        };
+    } else if (score >= 5) {
+        return {
+            title: "💪 Você está evoluindo!",
+            message: `Você tirou ${score}/10 — já dá pra se comunicar. Com prática diária, isso melhora rápido.`
+        };
+    } else {
+        return {
+            title: "🎯 Todo mundo começa assim.",
+            message: `Você tirou ${score}/10 — isso é completamente normal. É exatamente praticando que você destrava.`
+        };
+    }
+};
 
 export default function Paywall() {
     const router = useRouter();
@@ -20,6 +37,7 @@ export default function Paywall() {
     const [lastScore, setLastScore] = useState<number | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isCheckingOut, setIsCheckingOut] = useState(false);
+    const [limitReached, setLimitReached] = useState(false);
 
     useEffect(() => {
         const fetchProgress = async () => {
@@ -38,6 +56,11 @@ export default function Paywall() {
 
             if (profile) {
                 setXp(profile.xp || 0);
+
+                const todayToday = new Date().toISOString().split("T")[0];
+                if (profile.last_practice_date === todayToday && profile.practice_count_today >= 2) {
+                    setLimitReached(true);
+                }
             }
 
             // Fetch practice history for score and streak
@@ -86,10 +109,19 @@ export default function Paywall() {
     const handleCheckout = async () => {
         setIsCheckingOut(true);
         try {
-            const res = await fetch("/api/checkout", { method: "POST" });
+            const { data: { session } } = await supabase.auth.getSession();
+            const res = await fetch("/api/checkout", {
+                method: "POST",
+                headers: {
+                    'Authorization': `Bearer ${session?.access_token}`
+                }
+            });
             const data = await res.json();
             if (data.url) {
                 window.location.href = data.url;
+            } else {
+                console.error("Checkout error:", data);
+                setIsCheckingOut(false);
             }
         } catch (error) {
             console.error("Error redirecting to checkout:", error);
@@ -103,14 +135,33 @@ export default function Paywall() {
 
             <div className="w-full max-w-lg space-y-6 relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
 
+                {limitReached && (
+                    <Card className="p-4 border-red-500/30 bg-red-500/10 text-center shadow-lg relative overflow-hidden backdrop-blur-md">
+                        <span className="text-lg font-bold text-red-400 flex justify-center items-center gap-2">
+                            🚫 Você chegou no limite de hoje
+                        </span>
+                    </Card>
+                )}
+
                 {/* 1. Progress Reminder Card */}
                 {!isLoading && (lastScore !== null || streak > 0) && (
                     <Card className="p-6 border-orange-500/30 bg-orange-500/5 text-center flex flex-col items-center shadow-lg relative overflow-hidden">
                         <div className="absolute inset-0 bg-gradient-to-br from-orange-500/10 to-transparent opacity-50 z-0"></div>
                         <div className="relative z-10 w-full space-y-4">
-                            <h2 className="text-xl font-bold text-text-main flex items-center justify-center gap-2 tracking-tight">
-                                🔥 Você já começou muito bem!
-                            </h2>
+                            {lastScore !== null ? (
+                                <div className="space-y-2">
+                                    <h2 className="text-xl font-bold text-text-main flex items-center justify-center gap-2 tracking-tight">
+                                        {getFeedbackByScore(lastScore).title}
+                                    </h2>
+                                    <p className="text-[15px] font-medium text-text-secondary leading-relaxed max-w-xs mx-auto">
+                                        {getFeedbackByScore(lastScore).message}
+                                    </p>
+                                </div>
+                            ) : (
+                                <h2 className="text-xl font-bold text-text-main flex items-center justify-center gap-2 tracking-tight">
+                                    🔥 Continue sua evolução
+                                </h2>
+                            )}
 
                             <div className="w-[80%] mx-auto h-px bg-border/50"></div>
 
@@ -143,10 +194,10 @@ export default function Paywall() {
                 <Card className="text-center p-8 md:p-10 space-y-8 border-white/10 bg-card/80 backdrop-blur-md shadow-2xl">
                     <div className="space-y-4">
                         <div className="inline-block rounded-full px-4 py-1.5 text-sm text-yellow-500 font-bold bg-yellow-500/10 border border-yellow-500/20 mb-1 tracking-widest uppercase flex items-center gap-1.5 mx-auto w-fit">
-                            <span>⭐</span> Convy Premium
+                            <span>⭐</span> Não pare agora
                         </div>
                         <h1 className="text-3xl md:text-4xl font-black tracking-tight text-white drop-shadow-md leading-tight text-balance">
-                            Continue praticando inglês com IA.
+                            Continue de onde você parou
                         </h1>
                     </div>
 
@@ -163,12 +214,15 @@ export default function Paywall() {
 
                     <div className="flex flex-col items-center justify-center py-2 relative">
                         <div className="absolute inset-x-0 h-px bg-gradient-to-r from-transparent via-border/50 to-transparent top-0"></div>
-                        <div className="pt-4">
+                        <div className="pt-4 flex flex-col items-center">
+                            <span className="text-[11px] font-bold text-orange-400 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded-full tracking-wider uppercase mb-1.5 shadow-[0_0_10px_rgba(249,115,22,0.2)]">🔥 Oferta de lançamento</span>
+                            <span className="text-sm line-through text-text-secondary opacity-70 font-medium tracking-tight mb-0.5">De R$49,90</span>
                             <div className="flex items-baseline justify-center gap-1 text-white">
-                                <span className="text-2xl font-bold text-text-secondary">R$</span>
+                                <span className="text-xl font-bold text-text-secondary mr-0.5">por R$</span>
                                 <span className="text-5xl font-black tracking-tighter">29,90</span>
                                 <span className="text-lg text-text-secondary font-medium">/ mês</span>
                             </div>
+                            <span className="text-[13px] text-text-secondary/70 mt-1 font-medium tracking-wide">Menos de R$1 por dia</span>
                         </div>
                     </div>
 
@@ -179,11 +233,17 @@ export default function Paywall() {
                             onClick={handleCheckout}
                             disabled={isCheckingOut}
                         >
-                            {isCheckingOut ? "Carregando..." : "Desbloquear Premium"}
+                            {isCheckingOut ? "Carregando..." : "Continuar praticando agora"}
                         </Button>
                         <p className="text-sm font-medium text-text-secondary/80 pt-1 flex justify-center items-center gap-1">
                             <span className="opacity-70">🔒</span> Cancele quando quiser.
                         </p>
+                        <button
+                            onClick={() => router.push('/home')}
+                            className="text-sm font-medium text-text-secondary/50 hover:text-text-main transition-colors mt-3"
+                        >
+                            Voltar amanhã
+                        </button>
                     </div>
                 </Card>
             </div>
