@@ -165,17 +165,17 @@ function PracticeContent() {
     const audioChunksRef = useRef<Blob[]>([]);
 
     // Voice Activity Detection (VAD) state refs
-    const globalStreamRef = useRef<MediaStream | null>(null);
+    const activeStreamRef = useRef<MediaStream | null>(null);
     const globalAudioContextRef = useRef<AudioContext | null>(null);
     const isRecordingProcessActiveRef = useRef(false);
     const animationFrameRef = useRef<number | null>(null);
     const maxDurationTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-    const getPersistentStream = async () => {
-        if (!globalStreamRef.current) {
-            globalStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const releaseStream = () => {
+        if (activeStreamRef.current) {
+            activeStreamRef.current.getTracks().forEach(track => track.stop());
+            activeStreamRef.current = null;
         }
-        return globalStreamRef.current;
     };
 
     const stopRecordingCleanup = () => {
@@ -186,6 +186,7 @@ function PracticeContent() {
         if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
             mediaRecorderRef.current.stop();
         }
+        // Stream tracks are released inside onstop after data is captured
     };
 
     const setupVAD = (stream: MediaStream) => {
@@ -264,7 +265,8 @@ function PracticeContent() {
             isRecordingProcessActiveRef.current = true;
             setRecognitionError("");
 
-            const stream = await getPersistentStream();
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            activeStreamRef.current = stream;
 
             const mimeType = getSupportedMimeType();
             const options = mimeType ? { mimeType } : undefined;
@@ -280,6 +282,7 @@ function PracticeContent() {
             mediaRecorder.onstop = async () => {
                 setIsListening(false);
                 isRecordingProcessActiveRef.current = false;
+                releaseStream();
 
                 if (audioChunksRef.current.length === 0) return;
 
@@ -347,7 +350,8 @@ function PracticeContent() {
             setRepeatedText("");
             setRecognitionError("");
 
-            const stream = await getPersistentStream();
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            activeStreamRef.current = stream;
 
             const mimeType = getSupportedMimeType();
             const options = mimeType ? { mimeType } : undefined;
@@ -363,6 +367,7 @@ function PracticeContent() {
             mediaRecorder.onstop = async () => {
                 setIsRepeating(false);
                 isRecordingProcessActiveRef.current = false;
+                releaseStream();
 
                 if (audioChunksRef.current.length === 0) return;
 
@@ -683,14 +688,11 @@ function PracticeContent() {
                         hint: processedSteps[0].hint
                     }]);
 
-                    // Block explicitly inside a try/catch resolving concurrent hardware streams 
+                    // Prefetch audio for the first question before showing the UI
                     try {
-                        await Promise.all([
-                            prefetchAudio(firstQuestion),
-                            getPersistentStream()
-                        ]);
+                        await prefetchAudio(firstQuestion);
                     } catch (e) {
-                        console.warn("Hardware preload constraint handled flexibly:", e);
+                        console.warn("Audio preload error (non-blocking):", e);
                     }
                 } else {
                     const fallbackStep: ConversationStep = {

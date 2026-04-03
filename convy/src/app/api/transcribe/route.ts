@@ -14,14 +14,20 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Audio file is required' }, { status: 400 });
         }
 
-        console.log(`Transcribing audio file blob... Size: ${file.size} bytes`);
+        // Derive correct extension from actual blob type (Safari sends mp4, Chrome sends webm)
+        const blobType = file.type || 'audio/webm';
+        const ext = blobType.includes('mp4') ? 'mp4' : 'webm';
+        const fileName = `recording.${ext}`;
 
-        // Note: The OpenAI SDK typically expects a File object natively with a name
-        const audioFile = new File([file], 'recording.webm', { type: file.type || 'audio/webm' });
+        console.log(`[Transcribe] Size: ${file.size} bytes | Type: ${blobType} | File: ${fileName}`);
+
+        const audioFile = new File([file], fileName, { type: blobType });
 
         const transcription = await openai.audio.transcriptions.create({
             file: audioFile,
-            model: "gpt-4o-mini-transcribe", // As explicitly demanded by User (overriding whisper-1)
+            model: "gpt-4o-mini-transcribe",
+            language: "en",
+            prompt: "Medium please. No thanks. I'd like a coffee. Yes, that's all. My name is Guilherme.",
         });
 
         console.log("Transcription successful:", transcription.text);
