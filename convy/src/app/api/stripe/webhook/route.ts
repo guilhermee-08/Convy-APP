@@ -2,16 +2,13 @@ import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
-
-// CRITICAL: Webhooks operate anonymously without HTTP session cookies, so we MUST use the Service Role Key
-// to bypass Row Level Security securely and execute target database updates natively from the backend process.
-export const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL as string,
-    process.env.SUPABASE_SERVICE_ROLE_KEY as string
-);
-
 export async function POST(req: Request) {
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
+    const supabaseAdmin = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL as string,
+        process.env.SUPABASE_SERVICE_ROLE_KEY as string
+    );
+
     console.log("--- [STRIPE WEBHOOK] RECEIVED ---");
 
     let event: Stripe.Event;
@@ -42,7 +39,12 @@ export async function POST(req: Request) {
             case 'checkout.session.completed': {
                 const session = event.data.object as Stripe.Checkout.Session;
 
-                // Retrieve the user string mapped securely inside the checkout metadata
+                console.log(`\n=== CHECKOUT.SESSION.COMPLETED ===`);
+                console.log(`Session ID: ${session.id}`);
+                console.log(`Customer ID: ${session.customer}`);
+                console.log(`Subscription ID: ${session.subscription}`);
+                console.log(`Metadata raw:`, session.metadata);
+
                 const userId = session.metadata?.user_id;
 
                 if (!userId) {
@@ -50,12 +52,25 @@ export async function POST(req: Request) {
                     break;
                 }
 
-                console.log(`Processing checkout for userId: ${userId}`);
+                console.log(`Extracted userId from metadata: ${userId}`);
+
+                // PREEMPTIVE CHECK: Verify if profile actually exists
+                const { data: existingProfile, error: existingError } = await supabaseAdmin
+                    .from('profiles')
+                    .select('id')
+                    .eq('id', userId)
+                    .single();
+
+                if (existingError || !existingProfile) {
+                    console.error(`🚨 PREEMPTIVE PROFILE CHECK FAILED: No profile found for id = ${userId} in public.profiles prior to update! Error:`, existingError?.message || "Profile missing.");
+                } else {
+                    console.log(`Preemptive check passed: Profile ${userId} definitively exists in public.profiles. Proceeding with update...`);
+                }
 
                 const subscriptionId = session.subscription as string;
                 const customerId = session.customer as string;
 
-                const { error: patchError } = await supabaseAdmin
+                const { data, error: patchError, count } = await supabaseAdmin
                     .from('profiles')
                     .update({
                         stripe_customer_id: customerId,
@@ -63,14 +78,23 @@ export async function POST(req: Request) {
                         subscription_status: 'active',
                         is_premium: true
                     })
-                    .eq('id', userId);
+                    .eq('id', userId)
+                    .select();
+
+                console.log(`Supabase Rows updated query count: ${count}`);
 
                 if (patchError) {
-                    console.error("Supabase Database Update Error:", patchError.message);
+                    console.error("Exact Supabase Update Error object:", JSON.stringify(patchError));
+                    console.error("Supabase Database Update Error message:", patchError.message);
                     throw new Error(patchError.message);
                 }
 
-                console.log(`User ${userId} successfully upgraded to PREMIUM via checkout!`);
+                if (!data || data.length === 0) {
+                    console.error(`🚨 CRITICAL: No profile row was updated for id = ${userId}! Does the profile exist?`);
+                } else {
+                    console.log(`User ${userId} successfully upgraded to PREMIUM via checkout! Rows returned: ${data.length}`);
+                }
+
                 break;
             }
 

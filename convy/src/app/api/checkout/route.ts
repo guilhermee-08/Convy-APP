@@ -45,7 +45,12 @@ export async function POST(req: Request) {
             cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/paywall`,
         });
 
-        console.log("Stripe Session Created!");
+        console.log("----- STRIPE CHECKOUT METADATA LOGS -----");
+        console.log("Checkout Session ID created:", session.id);
+        console.log("Authenticated User ID sent in metadata:", user.id);
+        console.log("Authenticated User Email sent to customer_email:", user.email);
+        console.log("Stripe Session Creation Complete.");
+        console.log("-----------------------------------------");
 
         return NextResponse.json({ url: session.url });
     } catch (error: any) {

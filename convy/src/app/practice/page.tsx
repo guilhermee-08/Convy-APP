@@ -1184,7 +1184,7 @@ function PracticeContent() {
                                             </div>
                                         </div>
 
-                                        {scoreNum < 9 && (
+                                        {fb.correction && (
                                             <div className="space-y-1">
                                                 <span className="text-sm font-medium text-text-secondary uppercase tracking-wider block">❌ Correção</span>
                                                 <div className="bg-card border border-border rounded-lg p-4 flex flex-col gap-2">
@@ -1194,7 +1194,7 @@ function PracticeContent() {
                                             </div>
                                         )}
 
-                                        {scoreNum <= 8 && (
+                                        {fb.natural && (
                                             <div className="space-y-1">
                                                 <span className="text-sm font-medium text-text-secondary uppercase tracking-wider block">💡 Versão mais natural</span>
                                                 <div className="bg-card border border-border rounded-lg p-4 text-text-main italic">
@@ -1214,23 +1214,25 @@ function PracticeContent() {
                                     </div>
 
                                     {/* Repeat Sentence Section */}
-                                    <div className="space-y-3 pt-4 border-t border-border/50">
-                                        <h4 className="text-sm font-semibold text-text-main flex items-center gap-2">
-                                            <span className="text-primary text-xl">🎙️</span> Repeat the correct sentence
-                                        </h4>
-                                        <div className="bg-card/50 border border-border rounded-xl p-4 space-y-4">
-                                            <div className="flex items-start justify-between gap-4">
-                                                <p className="text-text-main font-medium leading-relaxed">"{fb.correction}"</p>
-                                                <button
-                                                    onClick={() => speakText(fb.correction)}
-                                                    className="p-2 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors flex items-center justify-center shrink-0"
-                                                    title="Ouvir frase correta"
-                                                >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
-                                                </button>
+                                    {fb.correction && (
+                                        <div className="space-y-3 pt-4 border-t border-border/50">
+                                            <h4 className="text-sm font-semibold text-text-main flex items-center gap-2">
+                                                <span className="text-primary text-xl">🎙️</span> Repeat the correct sentence
+                                            </h4>
+                                            <div className="bg-card/50 border border-border rounded-xl p-4 space-y-4">
+                                                <div className="flex items-start justify-between gap-4">
+                                                    <p className="text-text-main font-medium leading-relaxed">"{fb.correction}"</p>
+                                                    <button
+                                                        onClick={() => speakText(fb.correction)}
+                                                        className="p-2 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors flex items-center justify-center shrink-0"
+                                                        title="Ouvir frase correta"
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
+                                    )}
                                 </Card>
                             );
                         })}
