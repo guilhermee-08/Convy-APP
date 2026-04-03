@@ -23,6 +23,7 @@ export default function Home() {
     const [bestStreak, setBestStreak] = useState(0);
     const [lastScore, setLastScore] = useState<number | null>(null);
     const [situations, setSituations] = useState<Situation[]>([]);
+    const [isPremium, setIsPremium] = useState(false);
 
     // XP and Leveling
     const [xp, setXp] = useState(0);
@@ -60,6 +61,7 @@ export default function Home() {
                 const today = new Date().toISOString().split("T")[0];
                 const countToday = profile.last_practice_date === today ? profile.practice_count_today : 0;
                 setProfilePracticeCountToday(countToday);
+                setIsPremium(profile.is_premium);
 
                 if (!profile.is_premium) {
                     if (countToday >= 2) {
@@ -166,7 +168,7 @@ export default function Home() {
     return (
         <main className="min-h-screen bg-background flex flex-col items-center p-6 pt-12 relative overflow-hidden">
             <div className="w-full max-w-2xl space-y-8 relative z-10 animate-in fade-in zoom-in duration-500">
-                <div className="text-center space-y-3 mb-8">
+                <div className="text-center space-y-3 mb-6">
                     <h1 className="text-4xl font-extrabold tracking-tight text-text-main drop-shadow-sm">
                         Dashboard
                     </h1>
@@ -176,6 +178,38 @@ export default function Home() {
                             : "Acompanhe seu progresso e continue praticando:"}
                     </p>
                 </div>
+
+                {/* Account Status Badge */}
+                {!isLoading && (
+                    <div className="flex justify-center -mt-2 mb-6 relative z-10 w-full animate-in fade-in zoom-in duration-500 delay-100 fill-mode-both">
+                        <div className={`flex items-center gap-3 px-4 py-2.5 rounded-2xl border backdrop-blur-sm shadow-sm transition-all ${isPremium
+                                ? 'bg-orange-500/10 border-orange-500/20'
+                                : 'bg-card/60 border-white/5'
+                            }`}>
+                            {isPremium ? (
+                                <>
+                                    <div className="p-1.5 bg-orange-500/20 rounded-xl flex items-center justify-center text-orange-400">
+                                        <span className="text-lg">🔥</span>
+                                    </div>
+                                    <div className="text-left">
+                                        <div className="text-sm font-black text-text-main tracking-tight leading-tight">Premium ativo</div>
+                                        <div className="text-xs font-semibold text-orange-400">Conversas ilimitadas</div>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="p-1.5 bg-card border border-border/50 rounded-xl flex items-center justify-center grayscale opacity-80">
+                                        <span className="text-lg">🌱</span>
+                                    </div>
+                                    <div className="text-left">
+                                        <div className="text-sm font-bold text-text-main tracking-tight leading-tight">Plano Free</div>
+                                        <div className="text-xs font-medium text-text-secondary">3 conversas por dia</div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {/* Daily Mission Progress Indicator */}
                 <Card className="w-full p-5 border-white/5 bg-card/60 relative overflow-hidden group shadow-md hover:shadow-lg transition-all duration-300">

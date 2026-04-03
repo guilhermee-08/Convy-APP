@@ -129,6 +129,7 @@ function PracticeContent() {
 
     const [limitReached, setLimitReached] = useState(false);
     const [isVoiceResponse, setIsVoiceResponse] = useState(false);
+    const [isPremium, setIsPremium] = useState(false);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
@@ -233,6 +234,24 @@ function PracticeContent() {
         }
     };
 
+    const getSupportedMimeType = () => {
+        const types = [
+            'audio/webm;codecs=opus',
+            'audio/mp4',
+            'audio/webm'
+        ];
+        for (const type of types) {
+            try {
+                if (MediaRecorder.isTypeSupported(type)) {
+                    return type;
+                }
+            } catch (e) {
+                // Ignore DOMExceptions if certain browsers crash on isTypeSupported
+            }
+        }
+        return '';
+    };
+
     const toggleListening = async () => {
         // Prevent disjointed taps or overlapping recording loops
         if (isRecordingProcessActiveRef.current) {
@@ -246,7 +265,11 @@ function PracticeContent() {
             setRecognitionError("");
 
             const stream = await getPersistentStream();
-            const mediaRecorder = new MediaRecorder(stream);
+
+            const mimeType = getSupportedMimeType();
+            const options = mimeType ? { mimeType } : undefined;
+            const mediaRecorder = new MediaRecorder(stream, options);
+
             mediaRecorderRef.current = mediaRecorder;
             audioChunksRef.current = [];
 
@@ -260,9 +283,16 @@ function PracticeContent() {
 
                 if (audioChunksRef.current.length === 0) return;
 
-                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                const isMp4 = mimeType.includes('mp4');
+                const ext = isMp4 ? 'mp4' : 'webm';
+                const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/webm' });
+
                 const formData = new FormData();
-                formData.append('file', audioBlob, 'recording.webm');
+                formData.append('file', audioBlob, `recording.${ext}`);
+
+                console.log("[Voice Debug] Requesting inference - MimeType:", mimeType || "default");
+                console.log("[Voice Debug] Constructed Blob payload type:", audioBlob.type);
+                console.log(`[Voice Debug] Uploading strictly as recording.${ext}`);
 
                 try {
                     setInputValue('Processando...');
@@ -280,8 +310,8 @@ function PracticeContent() {
                     } else {
                         setInputValue("");
                     }
-                } catch (error) {
-                    console.error("Transcribe error:", error);
+                } catch (error: any) {
+                    console.error("[Voice Debug] Transcription pipeline error detail:", error);
                     setRecognitionError("Erro ao processar voz.");
                     setTimeout(() => setRecognitionError(""), 3000);
                     setInputValue("");
@@ -318,7 +348,11 @@ function PracticeContent() {
             setRecognitionError("");
 
             const stream = await getPersistentStream();
-            const mediaRecorder = new MediaRecorder(stream);
+
+            const mimeType = getSupportedMimeType();
+            const options = mimeType ? { mimeType } : undefined;
+            const mediaRecorder = new MediaRecorder(stream, options);
+
             mediaRecorderRef.current = mediaRecorder;
             audioChunksRef.current = [];
 
@@ -332,9 +366,16 @@ function PracticeContent() {
 
                 if (audioChunksRef.current.length === 0) return;
 
-                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                const isMp4 = mimeType.includes('mp4');
+                const ext = isMp4 ? 'mp4' : 'webm';
+                const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/webm' });
+
                 const formData = new FormData();
-                formData.append('file', audioBlob, 'repeat_recording.webm');
+                formData.append('file', audioBlob, `repeat_recording.${ext}`);
+
+                console.log("[Voice Debug Repeat] Selected MimeType:", mimeType || "default");
+                console.log("[Voice Debug Repeat] Blob Type generated:", audioBlob.type);
+                console.log(`[Voice Debug Repeat] Processing request format: repeat_recording.${ext}`);
 
                 try {
                     setRepeatedText('Processando...');
@@ -351,8 +392,8 @@ function PracticeContent() {
                     } else {
                         setRepeatedText("");
                     }
-                } catch (error) {
-                    console.error("Transcribe repeat error:", error);
+                } catch (error: any) {
+                    console.error("[Voice Debug Repeat] Transcription extraction logic fatal error:", error);
                     setRecognitionError("Erro ao processar repetição.");
                     setTimeout(() => setRecognitionError(""), 3000);
                     setRepeatedText("");
@@ -493,12 +534,16 @@ function PracticeContent() {
                 .eq("id", session.user.id)
                 .single();
 
-            if (profile && !profile.is_premium) {
-                const today = new Date().toISOString().split("T")[0];
-                if (profile.last_practice_date === today && profile.practice_count_today >= 2) {
-                    setLimitReached(true);
-                    setIsPageLoading(false);
-                    return;
+            if (profile) {
+                setIsPremium(profile.is_premium);
+
+                if (!profile.is_premium) {
+                    const today = new Date().toISOString().split("T")[0];
+                    if (profile.last_practice_date === today && profile.practice_count_today >= 2) {
+                        setLimitReached(true);
+                        setIsPageLoading(false);
+                        return;
+                    }
                 }
             }
 
@@ -1091,7 +1136,12 @@ function PracticeContent() {
             <div className="w-full max-w-2xl flex flex-col relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 {/* Header & Progress */}
                 <div className="text-center space-y-4 mb-4 shrink-0 mt-2 md:mt-6">
-                    <h1 className="text-3xl font-extrabold tracking-tight text-text-main drop-shadow-sm">
+                    <div className="flex justify-center mb-1 animate-in fade-in zoom-in duration-500">
+                        <div className={`px-2.5 py-0.5 rounded-sm text-[10px] font-bold tracking-widest uppercase border ${isPremium ? 'bg-orange-500/10 text-orange-400 border-orange-500/30 shadow-[0_0_10px_rgba(249,115,22,0.1)]' : 'bg-card text-text-secondary border-border/50'}`}>
+                            {isPremium ? '🔥 Premium' : '🌱 Plano Free'}
+                        </div>
+                    </div>
+                    <h1 className="text-3xl font-extrabold tracking-tight text-text-main drop-shadow-sm -mt-2">
                         Prática de conversa
                     </h1>
                     <div className="w-full max-w-md mx-auto space-y-2">
