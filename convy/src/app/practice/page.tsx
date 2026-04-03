@@ -506,6 +506,7 @@ function PracticeContent() {
 
             try {
                 await audio.play();
+                audioUnlockedRef.current = true; // Mark as unlocked so unlockAudio() won't interfere later
                 setAutoplayBlocked(false);
                 setPendingAutoplayText(null);
             } catch (playError) {
