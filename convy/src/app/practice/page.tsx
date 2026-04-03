@@ -112,6 +112,7 @@ function PracticeContent() {
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [synthesisSupported, setSynthesisSupported] = useState(true);
     const [synthesisError, setSynthesisError] = useState<string | null>(null);
+    const [isPreparingAudio, setIsPreparingAudio] = useState(false);
 
     // Determines if the user is typing or using the new voice-first interface
     const [isTypingMode, setIsTypingMode] = useState(false);
@@ -131,8 +132,12 @@ function PracticeContent() {
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
-    // Track which message index was last read aloud to prevent double-playing
-    const lastSpokenMessageIndex = useRef<number>(-1);
+    const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+    const audioCacheRef = useRef<Record<string, string>>({});
+    const activePlaybackTextRef = useRef<string | null>(null);
+
+    const lastSpokenMessageContent = useRef<string | null>(null);
+    const dataLoadedRef = useRef(false);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -155,163 +160,283 @@ function PracticeContent() {
         }
     }, []);
 
-    const toggleListening = () => {
-        if (!recognitionSupported) {
-            setRecognitionError("Reconhecimento de voz não disponível neste navegador.");
-            setTimeout(() => setRecognitionError(""), 3000);
-            return;
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioChunksRef = useRef<Blob[]>([]);
+
+    // Voice Activity Detection (VAD) state refs
+    const globalStreamRef = useRef<MediaStream | null>(null);
+    const globalAudioContextRef = useRef<AudioContext | null>(null);
+    const isRecordingProcessActiveRef = useRef(false);
+    const animationFrameRef = useRef<number | null>(null);
+    const maxDurationTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+    const getPersistentStream = async () => {
+        if (!globalStreamRef.current) {
+            globalStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
         }
+        return globalStreamRef.current;
+    };
 
-        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        const recognition = new SpeechRecognition();
+    const stopRecordingCleanup = () => {
+        if (maxDurationTimerRef.current) clearTimeout(maxDurationTimerRef.current);
+        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+        isRecordingProcessActiveRef.current = false;
 
-        // Configure for English recognition
-        recognition.lang = 'en-US';
-        recognition.interimResults = false;
-        recognition.maxAlternatives = 1;
-
-        if (isListening) {
-            recognition.stop();
-            setIsListening(false);
-            return;
-        }
-
-        recognition.onstart = () => {
-            setIsListening(true);
-            setRecognitionError("");
-        };
-
-        recognition.onresult = (event: any) => {
-            const transcript = event.results[0][0].transcript;
-            if (!transcript) return;
-            setInputValue(transcript);
-            submitMessage(transcript, true);
-        };
-
-        recognition.onerror = (event: any) => {
-            console.error("Speech recognition error", event.error);
-            setIsListening(false);
-            if (event.error === 'not-allowed') {
-                setRecognitionError("Permissão de microfone negada.");
-            } else {
-                setRecognitionError("Erro ao reconhecer voz. Tente novamente.");
-            }
-            setTimeout(() => setRecognitionError(""), 3000);
-        };
-
-        recognition.onend = () => {
-            setIsListening(false);
-        };
-
-        try {
-            recognition.start();
-        } catch (e) {
-            console.error(e);
-            setIsListening(false);
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
         }
     };
 
-    const toggleRepeating = () => {
-        if (!recognitionSupported) {
-            setRecognitionError("Reconhecimento de voz não disponível neste navegador.");
+    const setupVAD = (stream: MediaStream) => {
+        try {
+            const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+            if (!globalAudioContextRef.current) {
+                globalAudioContextRef.current = new AudioContext();
+            }
+            const ctx = globalAudioContextRef.current;
+            if (ctx.state === 'suspended') ctx.resume();
+
+            const source = ctx.createMediaStreamSource(stream);
+            const analyser = ctx.createAnalyser();
+            analyser.fftSize = 256;
+            source.connect(analyser);
+
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+            let lastSpeechTime = Date.now();
+            let hasSpoken = false;
+
+            const checkSilence = () => {
+                if (!isRecordingProcessActiveRef.current) return;
+
+                analyser.getByteFrequencyData(dataArray);
+                let sum = 0;
+                for (let i = 0; i < dataArray.length; i++) { sum += dataArray[i]; }
+                const avg = sum / dataArray.length;
+
+                if (avg > 15) { // Empirically, volume threshold for speaking natively
+                    hasSpoken = true;
+                    lastSpeechTime = Date.now();
+                } else if (hasSpoken) {
+                    if (Date.now() - lastSpeechTime > 1500) { // 1.5 seconds elapsed of silence
+                        stopRecordingCleanup();
+                        return;
+                    }
+                }
+
+                animationFrameRef.current = requestAnimationFrame(checkSilence);
+            };
+
+            checkSilence();
+        } catch (e) {
+            console.error("VAD processing error fallback", e);
+        }
+    };
+
+    const toggleListening = async () => {
+        // Prevent disjointed taps or overlapping recording loops
+        if (isRecordingProcessActiveRef.current) {
+            stopRecordingCleanup();
+            return;
+        }
+
+        try {
+            setIsListening(true);
+            isRecordingProcessActiveRef.current = true;
+            setRecognitionError("");
+
+            const stream = await getPersistentStream();
+            const mediaRecorder = new MediaRecorder(stream);
+            mediaRecorderRef.current = mediaRecorder;
+            audioChunksRef.current = [];
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) audioChunksRef.current.push(event.data);
+            };
+
+            mediaRecorder.onstop = async () => {
+                setIsListening(false);
+                isRecordingProcessActiveRef.current = false;
+
+                if (audioChunksRef.current.length === 0) return;
+
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                const formData = new FormData();
+                formData.append('file', audioBlob, 'recording.webm');
+
+                try {
+                    setInputValue('Processando...');
+                    const res = await fetch('/api/transcribe', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!res.ok) throw new Error("Transcription failed");
+                    const data = await res.json();
+
+                    if (data.text) {
+                        setInputValue(data.text);
+                        submitMessage(data.text, true);
+                    } else {
+                        setInputValue("");
+                    }
+                } catch (error) {
+                    console.error("Transcribe error:", error);
+                    setRecognitionError("Erro ao processar voz.");
+                    setTimeout(() => setRecognitionError(""), 3000);
+                    setInputValue("");
+                }
+            };
+
+            mediaRecorder.start();
+            setupVAD(stream);
+
+            // Hard maximum boundary to ensure they are never stuck
+            maxDurationTimerRef.current = setTimeout(() => {
+                stopRecordingCleanup();
+            }, 8000);
+
+        } catch (error) {
+            console.error("Microphone error", error);
+            setRecognitionError("Permissão de microfone negada.");
             setTimeout(() => setRecognitionError(""), 3000);
+            setIsListening(false);
+            isRecordingProcessActiveRef.current = false;
+        }
+    };
+
+    const toggleRepeating = async () => {
+        if (isRecordingProcessActiveRef.current) {
+            stopRecordingCleanup();
             return;
         }
 
-        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        const recognition = new SpeechRecognition();
-
-        recognition.lang = 'en-US';
-        recognition.interimResults = false;
-        recognition.maxAlternatives = 1;
-
-        if (isRepeating) {
-            recognition.stop();
-            setIsRepeating(false);
-            return;
-        }
-
-        recognition.onstart = () => {
+        try {
             setIsRepeating(true);
+            isRecordingProcessActiveRef.current = true;
             setRepeatedText("");
             setRecognitionError("");
-        };
 
-        recognition.onresult = (event: any) => {
-            const transcript = event.results[0][0].transcript;
-            setRepeatedText(transcript);
-        };
+            const stream = await getPersistentStream();
+            const mediaRecorder = new MediaRecorder(stream);
+            mediaRecorderRef.current = mediaRecorder;
+            audioChunksRef.current = [];
 
-        recognition.onerror = (event: any) => {
-            console.error("Speech recognition error during repeat", event.error);
-            setIsRepeating(false);
-            if (event.error === 'not-allowed') {
-                setRecognitionError("Permissão de microfone negada.");
-            } else {
-                setRecognitionError("Erro ao reconhecer voz. Tente novamente.");
-            }
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) audioChunksRef.current.push(event.data);
+            };
+
+            mediaRecorder.onstop = async () => {
+                setIsRepeating(false);
+                isRecordingProcessActiveRef.current = false;
+
+                if (audioChunksRef.current.length === 0) return;
+
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                const formData = new FormData();
+                formData.append('file', audioBlob, 'repeat_recording.webm');
+
+                try {
+                    setRepeatedText('Processando...');
+                    const res = await fetch('/api/transcribe', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!res.ok) throw new Error("Transcription failed");
+                    const data = await res.json();
+
+                    if (data.text) {
+                        setRepeatedText(data.text);
+                    } else {
+                        setRepeatedText("");
+                    }
+                } catch (error) {
+                    console.error("Transcribe repeat error:", error);
+                    setRecognitionError("Erro ao processar repetição.");
+                    setTimeout(() => setRecognitionError(""), 3000);
+                    setRepeatedText("");
+                }
+            };
+
+            mediaRecorder.start();
+            setupVAD(stream);
+
+            maxDurationTimerRef.current = setTimeout(() => {
+                stopRecordingCleanup();
+            }, 8000);
+
+        } catch (error) {
+            console.error("Microphone error", error);
+            setRecognitionError("Permissão de microfone negada.");
             setTimeout(() => setRecognitionError(""), 3000);
-        };
-
-        recognition.onend = () => {
             setIsRepeating(false);
-        };
-
-        try {
-            recognition.start();
-        } catch (e) {
-            console.error(e);
-            setIsRepeating(false);
+            isRecordingProcessActiveRef.current = false;
         }
     };
 
-    const speakText = (text: string) => {
+    const prefetchAudio = async (text: string) => {
+        if (!text) return null;
+        if (audioCacheRef.current[text]) return audioCacheRef.current[text];
         try {
-            if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+            const res = await fetch('/api/tts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text })
+            });
+            if (!res.ok) throw new Error("TTS prefetch failed");
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            audioCacheRef.current[text] = url;
+            return url;
+        } catch (e) {
+            console.error("Prefetch audio failed:", e);
+            return null;
+        }
+    };
+
+    const speakText = async (text: string) => {
+        try {
+            if (ttsAudioRef.current) {
+                ttsAudioRef.current.pause();
+                ttsAudioRef.current.currentTime = 0;
+            }
+
+            activePlaybackTextRef.current = text;
+            setIsPreparingAudio(true);
+
+            let url = audioCacheRef.current[text];
+            if (!url) {
+                url = await prefetchAudio(text) || "";
+            }
+
+            // Abandon if superseded by another quick action
+            if (activePlaybackTextRef.current !== text) {
+                setIsPreparingAudio(false);
                 return;
             }
 
-            if (!synthesisSupported) {
+            setIsPreparingAudio(false);
+
+            if (!url) {
+                setIsSpeaking(false);
                 return;
             }
 
-            const synth = window.speechSynthesis;
-            if (!synth) return;
+            setIsSpeaking(true);
+            const audio = new Audio(url);
+            ttsAudioRef.current = audio;
 
-            // Cancel any ongoing speech to prevent queueing
-            try {
-                synth.cancel();
-            } catch (e) {
-                console.warn("Could not cancel previous speech", e);
-            }
-
-            const utterance = new SpeechSynthesisUtterance(text);
-            if (!utterance) return;
-
-            utterance.lang = 'en-US';
-
-            try {
-                // Try to find a native English voice if possible
-                const voices = synth.getVoices() || [];
-                // Prefer a specific US English voice for better quality if available, fallback to any English voice
-                const englishVoice = voices.find(v => v.lang === 'en-US') || voices.find(v => v.lang.startsWith('en'));
-                if (englishVoice) {
-                    utterance.voice = englishVoice;
-                }
-            } catch (e) {
-                console.warn("Could not retrieve voices", e);
-            }
-
-            utterance.onstart = () => setIsSpeaking(true);
-            utterance.onerror = (event) => {
-                console.warn("Speech synthesis error:", event);
+            audio.onended = () => setIsSpeaking(false);
+            audio.onerror = (e) => {
+                console.error("Audio Playback Error:", e);
                 setIsSpeaking(false);
             };
-            utterance.onend = () => setIsSpeaking(false);
 
-            synth.speak(utterance);
+            await audio.play();
         } catch (error) {
-            console.warn("Speech synthesis failed gracefully:", error);
+            console.error("Speech synthesis handling internal error:", error);
+            setIsPreparingAudio(false);
             setIsSpeaking(false);
         }
     };
@@ -319,17 +444,21 @@ function PracticeContent() {
     // Auto-play TTS when a newly rendered AI message appears
     useEffect(() => {
         if (messages.length > 0) {
-            const lastIndex = messages.length - 1;
-            const lastMessage = messages[lastIndex];
+            const lastMessage = messages[messages.length - 1];
 
-            // If the newest message is from AI and we haven't spoken it yet
-            if (lastMessage.role === 'ai' && lastSpokenMessageIndex.current !== lastIndex) {
-                lastSpokenMessageIndex.current = lastIndex;
+            // If the newest message is from AI and we haven't spoken this exact text yet
+            if (lastMessage.role === 'ai' && lastSpokenMessageContent.current !== lastMessage.content) {
+                lastSpokenMessageContent.current = lastMessage.content;
 
-                // Slight delay to ensure UI renders smoothly before audio block
+                // Slight delay to ensure UI renders smoothly before audio block starts
                 setTimeout(() => {
                     try {
-                        speakText(lastMessage.content);
+                        speakText(lastMessage.content).then(() => {
+                            // After playing, blindly prefetch the next potential conversation step silently
+                            if (currentStep + 1 < conversationSteps.length) {
+                                prefetchAudio(conversationSteps[currentStep + 1].question);
+                            }
+                        });
                     } catch (e) {
                         console.warn("Auto-play TTS error:", e);
                     }
@@ -349,6 +478,9 @@ function PracticeContent() {
     // Initial limit check & load data
     useEffect(() => {
         const loadData = async () => {
+            if (dataLoadedRef.current) return;
+            dataLoadedRef.current = true;
+
             const { data: { session } } = await supabase.auth.getSession();
             if (!session?.user) {
                 router.push("/login");
@@ -496,12 +628,25 @@ function PracticeContent() {
                     });
 
                     setConversationSteps(processedSteps);
+
+                    // Map immediate values natively into State hooks first
+                    const firstQuestion = processedSteps[0].question;
                     setMessages([{
                         role: 'ai',
-                        content: processedSteps[0].question,
+                        content: firstQuestion,
                         translation: processedSteps[0].translation,
                         hint: processedSteps[0].hint
                     }]);
+
+                    // Block explicitly inside a try/catch resolving concurrent hardware streams 
+                    try {
+                        await Promise.all([
+                            prefetchAudio(firstQuestion),
+                            getPersistentStream()
+                        ]);
+                    } catch (e) {
+                        console.warn("Hardware preload constraint handled flexibly:", e);
+                    }
                 } else {
                     const fallbackStep: ConversationStep = {
                         id: 'fallback',
@@ -919,34 +1064,22 @@ function PracticeContent() {
 
     if (isPageLoading) {
         return (
-            <main className="min-h-screen bg-background flex flex-col items-center p-6 pt-12 relative overflow-hidden">
-                <div className="w-full max-w-2xl space-y-8 relative z-10 animate-in fade-in duration-500">
-                    {/* Header & Progress Skeleton */}
-                    <div className="text-center space-y-4 mb-8">
-                        <h1 className="text-3xl font-extrabold tracking-tight text-text-main drop-shadow-sm">
-                            Prática de conversa
-                        </h1>
-                        <div className="w-full max-w-md mx-auto space-y-2">
-                            <div className="h-2 w-full bg-card border border-white/5 rounded-full overflow-hidden">
-                                <div className="h-full bg-border/30 rounded-full w-full animate-pulse" />
-                            </div>
-                            <div className="h-4 w-12 bg-border/30 rounded mx-auto animate-pulse" />
-                        </div>
-                    </div>
+            <main className="min-h-screen bg-background flex flex-col items-center justify-center p-6 relative overflow-hidden">
+                <div className="absolute inset-0 bg-primary/5 blur-[100px] pointer-events-none"></div>
 
-                    {/* Chat Area Skeleton */}
-                    <div className="space-y-6 flex-1 min-h-[300px] pb-4">
-                        <div className="flex justify-start">
-                            <div className="w-[80%] bg-card border border-border rounded-2xl rounded-bl-sm p-5 space-y-3 animate-pulse shadow-sm">
-                                <div className="h-4 bg-border/40 rounded w-3/4"></div>
-                                <div className="h-4 bg-border/40 rounded w-full"></div>
-                                <div className="h-4 bg-border/40 rounded w-5/6"></div>
-                                <div className="pt-2 mt-2 border-t border-border/30 flex gap-4">
-                                    <div className="h-3 bg-border/40 rounded w-20"></div>
-                                    <div className="h-3 bg-border/40 rounded w-12"></div>
-                                </div>
-                            </div>
-                        </div>
+                <div className="w-full max-w-sm text-center p-10 space-y-6 relative z-10 border border-white/10 bg-card/80 backdrop-blur-xl animate-in zoom-in slide-in-from-bottom-4 duration-500 shadow-2xl rounded-[2rem] flex flex-col items-center">
+                    <div className="relative w-14 h-14 flex items-center justify-center mb-2">
+                        <div className="absolute inset-0 border-4 border-primary/20 rounded-full"></div>
+                        <div className="absolute inset-0 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+                        <div className="absolute flex items-center justify-center text-primary text-xl">🎙️</div>
+                    </div>
+                    <div className="space-y-3">
+                        <h2 className="text-xl font-bold tracking-tight text-text-main animate-pulse">
+                            Preparando a conversa...
+                        </h2>
+                        <p className="text-sm text-text-secondary font-medium">
+                            Ajustando áudio e conectando o microfone
+                        </p>
                     </div>
                 </div>
             </main>
@@ -994,12 +1127,17 @@ function PracticeContent() {
                                             onClick={() => speakText(msg.content)}
                                             className="p-1.5 rounded-full text-text-secondary hover:text-primary hover:bg-primary/10 transition-colors flex items-center justify-center shrink-0"
                                             title="Ouvir pronúncia"
+                                            disabled={isPreparingAudio}
                                         >
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isSpeaking ? "animate-pulse text-primary" : ""}>
-                                                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-                                                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-                                                <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
-                                            </svg>
+                                            {isPreparingAudio && activePlaybackTextRef.current === msg.content ? (
+                                                <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                                            ) : (
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isSpeaking && activePlaybackTextRef.current === msg.content ? "animate-pulse text-primary" : ""}>
+                                                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                                                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+                                                </svg>
+                                            )}
                                         </button>
                                     )}
                                 </div>
