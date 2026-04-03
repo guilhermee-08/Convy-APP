@@ -168,7 +168,17 @@ export default function Home() {
     return (
         <main className="min-h-screen bg-background flex flex-col items-center p-6 pt-12 relative overflow-hidden">
             <div className="w-full max-w-2xl space-y-8 relative z-10 animate-in fade-in zoom-in duration-500">
-                <div className="text-center space-y-3 mb-6">
+                <div className="text-center space-y-3 mb-6 relative">
+                    <button
+                        onClick={() => router.push('/account')}
+                        className="absolute right-0 top-0 z-20 p-2 rounded-xl text-text-secondary hover:text-text-main hover:bg-card/60 transition-colors"
+                        title="Conta"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                        </svg>
+                    </button>
                     <h1 className="text-4xl font-extrabold tracking-tight text-text-main drop-shadow-sm">
                         Dashboard
                     </h1>
@@ -183,8 +193,8 @@ export default function Home() {
                 {!isLoading && (
                     <div className="flex justify-center -mt-2 mb-6 relative z-10 w-full animate-in fade-in zoom-in duration-500 delay-100 fill-mode-both">
                         <div className={`flex items-center gap-3 px-4 py-2.5 rounded-2xl border backdrop-blur-sm shadow-sm transition-all ${isPremium
-                                ? 'bg-orange-500/10 border-orange-500/20'
-                                : 'bg-card/60 border-white/5'
+                            ? 'bg-orange-500/10 border-orange-500/20'
+                            : 'bg-card/60 border-white/5'
                             }`}>
                             {isPremium ? (
                                 <>
