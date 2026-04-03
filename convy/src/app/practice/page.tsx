@@ -133,9 +133,32 @@ function PracticeContent() {
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
-    const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
     const audioCacheRef = useRef<Record<string, string>>({});
     const activePlaybackTextRef = useRef<string | null>(null);
+    const audioUnlockedRef = useRef(false);
+    const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+    const [pendingAutoplayText, setPendingAutoplayText] = useState<string | null>(null);
+
+    // Single persistent Audio element — iOS Safari requires reusing the same
+    // element that was "unlocked" by a user gesture
+    const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+    if (typeof window !== 'undefined' && !ttsAudioRef.current) {
+        ttsAudioRef.current = new Audio();
+    }
+
+    const unlockAudio = () => {
+        if (audioUnlockedRef.current) return;
+        const el = ttsAudioRef.current;
+        if (!el) return;
+        // Play a tiny silent mp3 to unlock the element on iOS
+        el.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYM6FMAAAAAAAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYM6FMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+        el.volume = 0;
+        el.play().then(() => {
+            el.pause();
+            el.volume = 1;
+            audioUnlockedRef.current = true;
+        }).catch(() => { /* Ignore — user hasn't tapped yet */ });
+    };
 
     const lastSpokenMessageContent = useRef<string | null>(null);
     const dataLoadedRef = useRef(false);
@@ -254,6 +277,7 @@ function PracticeContent() {
     };
 
     const toggleListening = async () => {
+        unlockAudio(); // Unlock iOS audio on user gesture
         // Prevent disjointed taps or overlapping recording loops
         if (isRecordingProcessActiveRef.current) {
             stopRecordingCleanup();
@@ -443,10 +467,12 @@ function PracticeContent() {
 
     const speakText = async (text: string) => {
         try {
-            if (ttsAudioRef.current) {
-                ttsAudioRef.current.pause();
-                ttsAudioRef.current.currentTime = 0;
-            }
+            const audio = ttsAudioRef.current;
+            if (!audio) return;
+
+            // Stop any current playback
+            audio.pause();
+            audio.currentTime = 0;
 
             activePlaybackTextRef.current = text;
             setIsPreparingAudio(true);
@@ -470,8 +496,7 @@ function PracticeContent() {
             }
 
             setIsSpeaking(true);
-            const audio = new Audio(url);
-            ttsAudioRef.current = audio;
+            audio.src = url;
 
             audio.onended = () => setIsSpeaking(false);
             audio.onerror = (e) => {
@@ -479,9 +504,19 @@ function PracticeContent() {
                 setIsSpeaking(false);
             };
 
-            await audio.play();
+            try {
+                await audio.play();
+                setAutoplayBlocked(false);
+                setPendingAutoplayText(null);
+            } catch (playError) {
+                // iOS Safari autoplay was blocked — surface a tap-to-play state
+                console.warn("Autoplay blocked by browser:", playError);
+                setIsSpeaking(false);
+                setAutoplayBlocked(true);
+                setPendingAutoplayText(text);
+            }
         } catch (error) {
-            console.error("Speech synthesis handling internal error:", error);
+            console.error("speakText error:", error);
             setIsPreparingAudio(false);
             setIsSpeaking(false);
         }
@@ -715,6 +750,7 @@ function PracticeContent() {
 
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
+        unlockAudio(); // Unlock iOS audio on user gesture
         const userText = inputValue.trim();
         if (!userText) return;
         await submitMessage(userText, false);
@@ -1272,6 +1308,28 @@ function PracticeContent() {
                             </div>
                         </div>
                     ))}
+
+                    {/* iOS autoplay blocked fallback */}
+                    {autoplayBlocked && pendingAutoplayText && (
+                        <div className="flex justify-start animate-in fade-in slide-in-from-bottom-2 duration-300">
+                            <button
+                                onClick={() => {
+                                    unlockAudio();
+                                    setAutoplayBlocked(false);
+                                    setPendingAutoplayText(null);
+                                    speakText(pendingAutoplayText);
+                                }}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary/10 border border-primary/20 text-primary text-sm font-medium hover:bg-primary/20 transition-colors"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                                </svg>
+                                Toque para ouvir
+                            </button>
+                        </div>
+                    )}
+
                     {isLoadingFeedback && finalLoadingState === 'idle' && (
                         <div className="flex justify-start opacity-70 mb-2">
                             <div className="text-xs text-text-secondary/60 italic px-2 flex items-center gap-1.5">
