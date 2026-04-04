@@ -1478,6 +1478,35 @@ function PracticeContent() {
                                             </div>
                                         )}
 
+                                        {fb.highlights && Array.isArray(fb.highlights) && fb.highlights.length > 0 && (
+                                            <div className="space-y-1">
+                                                <span className="text-sm font-medium text-text-secondary uppercase tracking-wider block">🔍 Mudanças específicas</span>
+                                                <div className="bg-card border border-border rounded-lg p-3 space-y-2">
+                                                    {fb.highlights.map((h: any, i: number) => (
+                                                        <div key={i} className="flex items-center gap-2 text-sm">
+                                                            <span className="text-red-400 line-through font-medium">"{h.wrong}"</span>
+                                                            <span className="text-text-secondary">→</span>
+                                                            <span className="text-green-400 font-bold">"{h.right}"</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {fb.examples && Array.isArray(fb.examples) && fb.examples.length > 0 && (
+                                            <div className="space-y-1">
+                                                <span className="text-sm font-medium text-text-secondary uppercase tracking-wider block">💬 Respostas válidas</span>
+                                                <div className="bg-card border border-green-500/20 rounded-lg p-3 space-y-1.5">
+                                                    {fb.examples.map((ex: string, i: number) => (
+                                                        <div key={i} className="flex items-start gap-2">
+                                                            <span className="text-green-400 mt-0.5 shrink-0">•</span>
+                                                            <span className="text-text-main font-medium text-sm">"{ex}"</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
                                         {fb.natural && (
                                             <div className="space-y-1">
                                                 <span className="text-sm font-medium text-text-secondary uppercase tracking-wider block">💡 Versão mais natural</span>
