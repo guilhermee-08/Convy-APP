@@ -136,6 +136,7 @@ function PracticeContent() {
     const audioCacheRef = useRef<Record<string, string>>({});
     const activePlaybackTextRef = useRef<string | null>(null);
     const audioUnlockedRef = useRef(false);
+    const hasSpokenRef = useRef(false);
     const [autoplayBlocked, setAutoplayBlocked] = useState(false);
     const [pendingAutoplayText, setPendingAutoplayText] = useState<string | null>(null);
 
@@ -230,6 +231,7 @@ function PracticeContent() {
 
             let lastSpeechTime = Date.now();
             let hasSpoken = false;
+            let speechFrames = 0;
 
             const checkSilence = () => {
                 if (!isRecordingProcessActiveRef.current) return;
@@ -239,13 +241,20 @@ function PracticeContent() {
                 for (let i = 0; i < dataArray.length; i++) { sum += dataArray[i]; }
                 const avg = sum / dataArray.length;
 
-                if (avg > 15) { // Empirically, volume threshold for speaking natively
-                    hasSpoken = true;
+                if (avg > 30) { // Volume threshold for real speech (raised from 15)
+                    speechFrames++;
+                    if (speechFrames >= 3) { // Require 3 consecutive loud frames
+                        hasSpoken = true;
+                        hasSpokenRef.current = true;
+                    }
                     lastSpeechTime = Date.now();
-                } else if (hasSpoken) {
-                    if (Date.now() - lastSpeechTime > 1500) { // 1.5 seconds elapsed of silence
-                        stopRecordingCleanup();
-                        return;
+                } else {
+                    speechFrames = 0; // Reset on silence
+                    if (hasSpoken) {
+                        if (Date.now() - lastSpeechTime > 1500) { // 1.5 seconds elapsed of silence
+                            stopRecordingCleanup();
+                            return;
+                        }
                     }
                 }
 
@@ -287,6 +296,7 @@ function PracticeContent() {
         try {
             setIsListening(true);
             isRecordingProcessActiveRef.current = true;
+            hasSpokenRef.current = false;
             setRecognitionError("");
 
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -310,16 +320,33 @@ function PracticeContent() {
 
                 if (audioChunksRef.current.length === 0) return;
 
+                if (!hasSpokenRef.current) {
+                    console.log("[Voice Debug] No speech detected by VAD — skipping transcription");
+                    setRecognitionError("Nenhuma fala detectada. Tente novamente.");
+                    setTimeout(() => setRecognitionError(""), 3000);
+                    setInputValue("");
+                    audioChunksRef.current = [];
+                    return;
+                }
+
                 const isMp4 = mimeType.includes('mp4');
                 const ext = isMp4 ? 'mp4' : 'webm';
                 const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/webm' });
+
+                console.log("[Voice Debug] Blob size:", audioBlob.size, "bytes | type:", audioBlob.type);
+
+                if (audioBlob.size < 1000) {
+                    console.log("[Voice Debug] Blob too small — skipping transcription");
+                    setRecognitionError("Não foi possível ouvir. Tente novamente.");
+                    setTimeout(() => setRecognitionError(""), 3000);
+                    setInputValue("");
+                    return;
+                }
 
                 const formData = new FormData();
                 formData.append('file', audioBlob, `recording.${ext}`);
 
                 console.log("[Voice Debug] Requesting inference - MimeType:", mimeType || "default");
-                console.log("[Voice Debug] Constructed Blob payload type:", audioBlob.type);
-                console.log(`[Voice Debug] Uploading strictly as recording.${ext}`);
 
                 try {
                     setInputValue('Processando...');
@@ -330,15 +357,23 @@ function PracticeContent() {
 
                     if (!res.ok) throw new Error("Transcription failed");
                     const data = await res.json();
+                    const transcript = (data.text || "").trim();
 
-                    if (data.text) {
-                        setInputValue(data.text);
-                        submitMessage(data.text, true);
-                    } else {
+                    console.log("[Voice Debug] Transcript:", JSON.stringify(transcript), "| length:", transcript.length);
+
+                    if (transcript.length < 2) {
+                        console.log("[Voice Debug] Transcript too short — not submitting");
+                        setRecognitionError("Não foi possível entender. Tente novamente.");
+                        setTimeout(() => setRecognitionError(""), 3000);
                         setInputValue("");
+                        return;
                     }
+
+                    console.log("[Voice Debug] Calling submitMessage with:", transcript);
+                    setInputValue(transcript);
+                    submitMessage(transcript, true);
                 } catch (error: any) {
-                    console.error("[Voice Debug] Transcription pipeline error detail:", error);
+                    console.error("[Voice Debug] Transcription pipeline error:", error);
                     setRecognitionError("Erro ao processar voz.");
                     setTimeout(() => setRecognitionError(""), 3000);
                     setInputValue("");
