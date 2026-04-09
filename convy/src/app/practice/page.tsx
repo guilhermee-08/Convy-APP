@@ -52,6 +52,9 @@ type ConversationStep = {
     hint_main?: string;
     hint_alt_1?: string;
     hint_alt_2?: string;
+    help_1?: string;
+    help_2?: string;
+    help_3?: string;
     question: string; // The randomly selected variation
     translation?: string;
     hint?: string;
@@ -66,6 +69,7 @@ type Message = {
     showHint?: boolean;
     vocabulary?: { word: string; translation: string }[];
     isLoadingTranslation?: boolean;
+    helpLevel?: number;
 };
 
 type FeedbackData = {
@@ -84,6 +88,7 @@ function PracticeContent() {
 
     const [currentStep, setCurrentStep] = useState(0);
     const [messages, setMessages] = useState<Message[]>([]);
+    const [helpLevel, setHelpLevel] = useState(0);
     const [inputValue, setInputValue] = useState("");
     const [isLoadingFeedback, setIsLoadingFeedback] = useState(false);
 
@@ -588,8 +593,22 @@ function PracticeContent() {
         setMessages(prev => prev.map((msg, i) => i === idx ? { ...msg, showTranslation: !msg.showTranslation } : msg));
     };
 
-    const toggleHint = (idx: number) => {
-        setMessages(prev => prev.map((msg, i) => i === idx ? { ...msg, showHint: !msg.showHint } : msg));
+    const handleHelp = () => {
+        if (helpLevel >= 3) return;
+        const nextLevel = helpLevel + 1;
+        const step = conversationSteps[currentStep];
+        if (!step) return;
+
+        const helpMap: Record<number, string | undefined> = {
+            1: step.help_1 || step.hint_main,
+            2: step.help_2 || step.hint_alt_1,
+            3: step.help_3 || step.hint_alt_2,
+        };
+
+        const content = helpMap[nextLevel] || helpMap[1] || "Tente responder de forma simples.";
+
+        setMessages(prev => [...prev, { role: 'help', content, helpLevel: nextLevel }]);
+        setHelpLevel(nextLevel);
     };
 
     // Initial limit check & load data
@@ -862,6 +881,7 @@ function PracticeContent() {
         // Apply immediate UI update for both messages at once
         setMessages(prev => [...prev, userMessage, nextAiMessage as Message]);
         setCurrentStep(nextStep);
+        setHelpLevel(0);
         setInputValue("");
 
         if (isFinal) {
@@ -1241,22 +1261,25 @@ function PracticeContent() {
                             <div
                                 className={`max-w-[80%] rounded-2xl px-5 py-3 shadow-sm flex flex-col gap-1.5 ${msg.role === 'user'
                                     ? 'bg-primary text-white rounded-br-sm'
-                                    : 'bg-card border border-border text-text-main rounded-bl-sm'
+                                    : msg.role === 'help'
+                                        ? 'bg-amber-500/10 border border-amber-500/20 text-text-main text-sm'
+                                        : 'bg-card border border-border text-text-main rounded-bl-sm'
                                     }`}
                             >
                                 <div className="flex items-center gap-2">
-                                    <div>{msg.content}</div>
-                                    {msg.role === 'ai' && (
+                                    {msg.role === 'help' && <span className="font-semibold text-amber-500 mr-0.5 text-base" aria-hidden="true">💡</span>}
+                                    <div className="leading-relaxed">{msg.content}</div>
+                                    {(msg.role === 'ai' || (msg.role === 'help' && msg.helpLevel === 3)) && (
                                         <button
                                             onClick={() => speakText(msg.content)}
-                                            className="p-1.5 rounded-full text-text-secondary hover:text-primary hover:bg-primary/10 transition-colors flex items-center justify-center shrink-0"
+                                            className={`p-1.5 rounded-full transition-colors flex items-center justify-center shrink-0 ${msg.role === 'help' ? 'text-amber-500/70 hover:text-amber-500 hover:bg-amber-500/10' : 'text-text-secondary hover:text-primary hover:bg-primary/10'}`}
                                             title="Ouvir pronúncia"
                                             disabled={isPreparingAudio}
                                         >
                                             {isPreparingAudio && activePlaybackTextRef.current === msg.content ? (
-                                                <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                                                <div className={`w-4 h-4 border-2 border-t-transparent rounded-full animate-spin ${msg.role === 'help' ? 'border-amber-500' : 'border-primary'}`}></div>
                                             ) : (
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isSpeaking && activePlaybackTextRef.current === msg.content ? "animate-pulse text-primary" : ""}>
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isSpeaking && activePlaybackTextRef.current === msg.content ? `animate-pulse ${msg.role === 'help' ? 'text-amber-500' : 'text-primary'}` : ""}>
                                                     <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
                                                     <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
                                                     <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
@@ -1265,78 +1288,43 @@ function PracticeContent() {
                                         </button>
                                     )}
                                 </div>
-                                {msg.role === 'ai' && (msg.translation || msg.hint || true) && (
+                                {msg.role === 'ai' && (msg.translation || (idx === messages.findLastIndex(m => m.role === 'ai') && helpLevel < 3)) && (
                                     <div className="flex flex-col gap-2 pt-1">
-                                        {(msg.translation || msg.hint || true) && (
-                                            <div className="flex items-center justify-between border-t border-border/30 pt-2">
-                                                <div className="flex gap-4">
-                                                    {msg.translation && (
-                                                        <button onClick={() => toggleTranslation(idx)} className="text-xs font-medium text-primary hover:text-primary/80 transition-colors flex items-center gap-1">
-                                                            {msg.showTranslation ? "Ocultar tradução" : "Ver tradução"}
-                                                        </button>
-                                                    )}
-                                                    {msg.hint && (
-                                                        <button onClick={() => toggleHint(idx)} className="text-xs font-medium text-amber-500 hover:text-amber-500/80 transition-colors">
-                                                            {msg.showHint ? "Ocultar dica" : "Ver dica"}
-                                                        </button>
+                                        <div className="flex items-center justify-between border-t border-border/30 pt-2">
+                                            <div className="flex gap-4">
+                                                {msg.translation && (
+                                                    <button onClick={() => toggleTranslation(idx)} className="text-xs font-medium text-primary hover:text-primary/80 transition-colors flex items-center gap-1">
+                                                        {msg.showTranslation ? "Ocultar tradução" : "Ver tradução"}
+                                                    </button>
+                                                )}
+                                                {idx === messages.findLastIndex(m => m.role === 'ai') && helpLevel < 3 && (
+                                                    <button onClick={handleHelp} className="text-xs font-medium text-amber-500 hover:text-amber-500/80 transition-colors">
+                                                        💡 Preciso de ajuda
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                        {msg.showTranslation && (
+                                            <div className="flex flex-col gap-2">
+                                                <div className="flex flex-col gap-3 animate-in fade-in">
+                                                    <div className="text-sm text-text-secondary italic">
+                                                        "{msg.translation}"
+                                                    </div>
+                                                    {msg.vocabulary && msg.vocabulary.length > 0 && (
+                                                        <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
+                                                            <span className="text-xs font-bold text-primary uppercase tracking-wider mb-2 block">Vocabulário</span>
+                                                            <ul className="space-y-1.5 text-sm text-text-secondary">
+                                                                {msg.vocabulary.map((v, i) => (
+                                                                    <li key={i} className="flex gap-2">
+                                                                        <span className="font-semibold text-text-main shrink-0">{v.word}</span>
+                                                                        <span className="text-text-secondary/50">=</span>
+                                                                        <span>{v.translation}</span>
+                                                                    </li>
+                                                                ))}
+                                                            </ul>
+                                                        </div>
                                                     )}
                                                 </div>
-                                            </div>
-                                        )}
-                                        {(msg.showTranslation || msg.showHint) && (
-                                            <div className="flex flex-col gap-2">
-                                                {msg.showTranslation && (
-                                                    <div className="flex flex-col gap-3 animate-in fade-in">
-                                                        <div className="text-sm text-text-secondary italic">
-                                                            "{msg.translation}"
-                                                        </div>
-                                                        {msg.vocabulary && msg.vocabulary.length > 0 && (
-                                                            <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
-                                                                <span className="text-xs font-bold text-primary uppercase tracking-wider mb-2 block">Vocabulário</span>
-                                                                <ul className="space-y-1.5 text-sm text-text-secondary">
-                                                                    {msg.vocabulary.map((v, i) => (
-                                                                        <li key={i} className="flex gap-2">
-                                                                            <span className="font-semibold text-text-main shrink-0">{v.word}</span>
-                                                                            <span className="text-text-secondary/50">=</span>
-                                                                            <span>{v.translation}</span>
-                                                                        </li>
-                                                                    ))}
-                                                                </ul>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-                                                {msg.showHint && (
-                                                    <div className="text-sm text-text-main bg-amber-500/10 border border-amber-500/20 p-3 rounded-lg animate-in fade-in">
-                                                        <div className="flex items-center justify-between mb-2">
-                                                            <span className="font-semibold text-amber-500">💡 Dica</span>
-                                                            <button
-                                                                onClick={() => {
-                                                                    if (!msg.hint) return;
-                                                                    let cleaned = msg.hint.replace(/^(Dica:|💡 Dica:|💡|Try:|Try saying:|You can say:|You could say:|Você pode dizer:|say:?)/i, "").trim();
-                                                                    if (/^["'].*["']$/.test(cleaned)) { cleaned = cleaned.substring(1, cleaned.length - 1).trim(); }
-                                                                    speakText(cleaned);
-                                                                }}
-                                                                className="p-1 rounded-full text-amber-500 hover:bg-amber-500/20 transition-colors flex items-center justify-center -mr-1"
-                                                                title="Ouvir dica"
-                                                            >
-                                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-                                                                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-                                                                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
-                                                                </svg>
-                                                            </button>
-                                                        </div>
-                                                        <div className="text-text-main/90 leading-relaxed font-medium">
-                                                            <span className="text-text-secondary/80 italic block mb-1">Você pode dizer:</span>
-                                                            "{msg.hint ? (() => {
-                                                                let cleaned = msg.hint.replace(/^(Dica:|💡 Dica:|💡|Try:|Try saying:|You can say:|You could say:|Você pode dizer:|say:?)/i, "").trim();
-                                                                if (/^["'].*["']$/.test(cleaned)) { cleaned = cleaned.substring(1, cleaned.length - 1).trim(); }
-                                                                return cleaned;
-                                                            })() : ""}"
-                                                        </div>
-                                                    </div>
-                                                )}
                                             </div>
                                         )}
                                     </div>
