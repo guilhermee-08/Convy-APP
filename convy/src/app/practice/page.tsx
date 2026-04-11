@@ -1385,8 +1385,8 @@ function PracticeContent() {
 
                 {/* Conversation Ended Action Bar */}
                 {isConversationEnded && finalLoadingState === 'idle' && (
-                    <div className="pt-8 pb-4 animate-in fade-in slide-in-from-bottom-6 duration-700 flex justify-center">
-                        <div className="bg-card w-full max-w-sm rounded-3xl p-8 flex flex-col items-center text-center gap-5 border border-border shadow-2xl relative overflow-hidden">
+                    <div className="pt-8 pb-4 animate-in fade-in slide-in-from-bottom-6 duration-700 flex justify-center px-4 w-full">
+                        <div className="bg-card w-full max-w-sm rounded-3xl p-6 sm:p-8 flex flex-col items-center text-center gap-5 border border-border shadow-2xl relative overflow-hidden">
                             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary/20 via-primary to-primary/20"></div>
 
                             <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center -mt-2">
@@ -1538,15 +1538,15 @@ function PracticeContent() {
                             );
                         })}
 
-                        <div className="flex items-center justify-between pt-8 border-t border-border/50">
-                            <p className="text-sm font-medium text-text-secondary flex items-center gap-1.5">
+                        <div className="flex flex-col pt-8 mt-6 border-t border-border/50 space-y-6">
+                            <Button variant="primary" onClick={handleFinishReview} className="w-full py-4 rounded-xl text-base font-semibold shadow-lg">
+                                Praticar novamente 🔁
+                            </Button>
+                            <p className="text-sm font-medium text-text-secondary text-center flex items-center justify-center gap-1.5">
                                 {currentStreak === 0
                                     ? "Volte amanhã e comece um streak de 1 dia"
                                     : `Volte amanhã e leve seu streak pra ${currentStreak + 1} dias`} <span className="text-lg">🔥</span>
                             </p>
-                            <Button variant="primary" onClick={handleFinishReview} className="px-8 rounded-xl py-6 text-lg shadow-lg">
-                                Praticar novamente 🔁
-                            </Button>
                         </div>
                     </div>
                 )}
