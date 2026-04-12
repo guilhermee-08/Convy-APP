@@ -26,13 +26,19 @@ export async function POST(req: Request) {
         const transcription = await openai.audio.transcriptions.create({
             file: audioFile,
             model: "gpt-4o-mini-transcribe",
-            language: "en",
-            prompt: "Medium please. No thanks. I'd like a coffee. Yes, that's all. My name is Guilherme.",
+            language: "en"
         });
 
-        console.log("Transcription successful:", transcription.text);
+        const safeText = (transcription.text || "").trim();
 
-        return NextResponse.json({ text: transcription.text });
+        if (safeText.length < 2) {
+            console.log("[Transcribe] Result was empty or whitespace only. Nullifying.");
+            return NextResponse.json({ text: "" });
+        }
+
+        console.log("Transcription successful:", safeText);
+
+        return NextResponse.json({ text: safeText });
 
     } catch (error: any) {
         console.error("Transcription Route Error:", error);

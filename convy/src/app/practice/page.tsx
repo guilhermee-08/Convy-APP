@@ -199,6 +199,7 @@ function PracticeContent() {
     const isRecordingProcessActiveRef = useRef(false);
     const animationFrameRef = useRef<number | null>(null);
     const maxDurationTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const activeSessionIdRef = useRef<number | null>(null);
 
     const releaseStream = () => {
         if (activeStreamRef.current) {
@@ -299,6 +300,8 @@ function PracticeContent() {
         }
 
         try {
+            const sessionId = Date.now();
+            activeSessionIdRef.current = sessionId;
             setIsListening(true);
             isRecordingProcessActiveRef.current = true;
             hasSpokenRef.current = false;
@@ -312,38 +315,39 @@ function PracticeContent() {
             const mediaRecorder = new MediaRecorder(stream, options);
 
             mediaRecorderRef.current = mediaRecorder;
-            audioChunksRef.current = [];
+            const sessionChunks: Blob[] = [];
 
             mediaRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0) audioChunksRef.current.push(event.data);
+                if (event.data.size > 0) sessionChunks.push(event.data);
             };
 
             mediaRecorder.onstop = async () => {
+                if (activeSessionIdRef.current !== sessionId) return; // Prevent superseded race conditions
+
                 setIsListening(false);
                 isRecordingProcessActiveRef.current = false;
                 releaseStream();
 
-                if (audioChunksRef.current.length === 0) return;
+                if (sessionChunks.length === 0) return;
 
                 if (!hasSpokenRef.current) {
                     console.log("[Voice Debug] No speech detected by VAD — skipping transcription");
                     setRecognitionError("Nenhuma fala detectada. Tente novamente.");
-                    setTimeout(() => setRecognitionError(""), 3000);
+                    setTimeout(() => { if (activeSessionIdRef.current === sessionId) setRecognitionError(""); }, 3000);
                     setInputValue("");
-                    audioChunksRef.current = [];
                     return;
                 }
 
                 const isMp4 = mimeType.includes('mp4');
                 const ext = isMp4 ? 'mp4' : 'webm';
-                const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/webm' });
+                const audioBlob = new Blob(sessionChunks, { type: mimeType || 'audio/webm' });
 
                 console.log("[Voice Debug] Blob size:", audioBlob.size, "bytes | type:", audioBlob.type);
 
                 if (audioBlob.size < 1000) {
                     console.log("[Voice Debug] Blob too small — skipping transcription");
                     setRecognitionError("Não foi possível ouvir. Tente novamente.");
-                    setTimeout(() => setRecognitionError(""), 3000);
+                    setTimeout(() => { if (activeSessionIdRef.current === sessionId) setRecognitionError(""); }, 3000);
                     setInputValue("");
                     return;
                 }
@@ -360,16 +364,30 @@ function PracticeContent() {
                         body: formData
                     });
 
+                    if (activeSessionIdRef.current !== sessionId) return;
+
                     if (!res.ok) throw new Error("Transcription failed");
                     const data = await res.json();
                     const transcript = (data.text || "").trim();
 
                     console.log("[Voice Debug] Transcript:", JSON.stringify(transcript), "| length:", transcript.length);
 
-                    if (transcript.length < 2) {
-                        console.log("[Voice Debug] Transcript too short — not submitting");
-                        setRecognitionError("Não foi possível entender. Tente novamente.");
-                        setTimeout(() => setRecognitionError(""), 3000);
+                    // Whisper Hallucination Filter
+                    const hallucinations = [
+                        "Medium please. No thanks. I'd like a coffee. Yes, that's all. My name is Guilherme.",
+                        "Subtitles by Amara.org",
+                        "Thanks for watching",
+                        "Thanks for watching.",
+                        "Thank you.",
+                        "Obrigado.",
+                        "Obrigado",
+                        "Amara.org"
+                    ];
+
+                    if (transcript.length < 2 || hallucinations.includes(transcript)) {
+                        console.log("[Voice Debug] Empty or hallucinated transcript — not submitting:", transcript);
+                        setRecognitionError("Não foi possível entender a fala. Tente novamente.");
+                        setTimeout(() => { if (activeSessionIdRef.current === sessionId) setRecognitionError(""); }, 3000);
                         setInputValue("");
                         return;
                     }
@@ -378,9 +396,10 @@ function PracticeContent() {
                     setInputValue(transcript);
                     submitMessage(transcript, true);
                 } catch (error: any) {
+                    if (activeSessionIdRef.current !== sessionId) return;
                     console.error("[Voice Debug] Transcription pipeline error:", error);
                     setRecognitionError("Erro ao processar voz.");
-                    setTimeout(() => setRecognitionError(""), 3000);
+                    setTimeout(() => { if (activeSessionIdRef.current === sessionId) setRecognitionError(""); }, 3000);
                     setInputValue("");
                 }
             };
@@ -388,14 +407,15 @@ function PracticeContent() {
             mediaRecorder.start();
             setupVAD(stream);
 
-            // Hard maximum boundary to ensure they are never stuck
             maxDurationTimerRef.current = setTimeout(() => {
-                stopRecordingCleanup();
+                if (activeSessionIdRef.current === sessionId) {
+                    stopRecordingCleanup();
+                }
             }, 8000);
 
         } catch (error) {
             console.error("Microphone error", error);
-            setRecognitionError("Permissão de microfone negada.");
+            setRecognitionError("Permissão de microfone negada. Verifique as configurações do navegador.");
             setTimeout(() => setRecognitionError(""), 3000);
             setIsListening(false);
             isRecordingProcessActiveRef.current = false;
@@ -409,8 +429,11 @@ function PracticeContent() {
         }
 
         try {
+            const sessionId = Date.now();
+            activeSessionIdRef.current = sessionId;
             setIsRepeating(true);
             isRecordingProcessActiveRef.current = true;
+            hasSpokenRef.current = false;
             setRepeatedText("");
             setRecognitionError("");
 
@@ -422,29 +445,34 @@ function PracticeContent() {
             const mediaRecorder = new MediaRecorder(stream, options);
 
             mediaRecorderRef.current = mediaRecorder;
-            audioChunksRef.current = [];
+            const sessionChunks: Blob[] = [];
 
             mediaRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0) audioChunksRef.current.push(event.data);
+                if (event.data.size > 0) sessionChunks.push(event.data);
             };
 
             mediaRecorder.onstop = async () => {
+                if (activeSessionIdRef.current !== sessionId) return;
+
                 setIsRepeating(false);
                 isRecordingProcessActiveRef.current = false;
                 releaseStream();
 
-                if (audioChunksRef.current.length === 0) return;
+                if (sessionChunks.length === 0) return;
+
+                if (!hasSpokenRef.current) {
+                    setRecognitionError("Nenhuma fala detectada.");
+                    setTimeout(() => { if (activeSessionIdRef.current === sessionId) setRecognitionError(""); }, 3000);
+                    setRepeatedText("");
+                    return;
+                }
 
                 const isMp4 = mimeType.includes('mp4');
                 const ext = isMp4 ? 'mp4' : 'webm';
-                const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/webm' });
+                const audioBlob = new Blob(sessionChunks, { type: mimeType || 'audio/webm' });
 
                 const formData = new FormData();
                 formData.append('file', audioBlob, `repeat_recording.${ext}`);
-
-                console.log("[Voice Debug Repeat] Selected MimeType:", mimeType || "default");
-                console.log("[Voice Debug Repeat] Blob Type generated:", audioBlob.type);
-                console.log(`[Voice Debug Repeat] Processing request format: repeat_recording.${ext}`);
 
                 try {
                     setRepeatedText('Processando...');
@@ -453,18 +481,39 @@ function PracticeContent() {
                         body: formData
                     });
 
+                    if (activeSessionIdRef.current !== sessionId) return;
+
                     if (!res.ok) throw new Error("Transcription failed");
                     const data = await res.json();
+                    let transcript = (data.text || "").trim();
 
-                    if (data.text) {
-                        setRepeatedText(data.text);
+                    const hallucinations = [
+                        "Medium please. No thanks. I'd like a coffee. Yes, that's all. My name is Guilherme.",
+                        "Subtitles by Amara.org",
+                        "Thanks for watching",
+                        "Thanks for watching.",
+                        "Thank you.",
+                        "Obrigado.",
+                        "Obrigado",
+                        "Amara.org"
+                    ];
+
+                    if (transcript.length < 2 || hallucinations.includes(transcript)) {
+                        transcript = "";
+                    }
+
+                    if (transcript) {
+                        setRepeatedText(transcript);
                     } else {
                         setRepeatedText("");
+                        setRecognitionError("Não foi possível entender a fala.");
+                        setTimeout(() => { if (activeSessionIdRef.current === sessionId) setRecognitionError(""); }, 3000);
                     }
                 } catch (error: any) {
+                    if (activeSessionIdRef.current !== sessionId) return;
                     console.error("[Voice Debug Repeat] Transcription extraction logic fatal error:", error);
                     setRecognitionError("Erro ao processar repetição.");
-                    setTimeout(() => setRecognitionError(""), 3000);
+                    setTimeout(() => { if (activeSessionIdRef.current === sessionId) setRecognitionError(""); }, 3000);
                     setRepeatedText("");
                 }
             };
@@ -473,7 +522,9 @@ function PracticeContent() {
             setupVAD(stream);
 
             maxDurationTimerRef.current = setTimeout(() => {
-                stopRecordingCleanup();
+                if (activeSessionIdRef.current === sessionId) {
+                    stopRecordingCleanup();
+                }
             }, 8000);
 
         } catch (error) {
