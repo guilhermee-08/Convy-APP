@@ -362,25 +362,30 @@ export default function Demo() {
                         <div ref={messagesEndRef} />
                     </div>
 
-                    <div className="pt-6 border-t border-white/5 space-y-4 shrink-0 mb-4 px-1 md:px-2">
+                    <div className="w-full shrink-0 sticky bottom-6 z-20 mt-4 pb-2 px-1 md:px-2">
                         {!isTypingMode ? (
-                            <div className="flex flex-col items-center gap-3 w-full animate-in fade-in slide-in-from-bottom-2 pt-2">
-                                <Button
+                            <div className="flex flex-col items-center gap-3 w-full animate-in fade-in slide-in-from-bottom-2">
+                                <button
                                     type="button"
                                     onClick={toggleListening}
-                                    variant="primary"
-                                    className={`w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300 shadow-xl ${isListening ? "bg-red-500 text-white shadow-[0_0_25px_rgba(239,68,68,0.5)] scale-110" : ""}`}
+                                    className={`w-[84px] h-[84px] rounded-[24px] flex items-center justify-center transition-all duration-300 active:scale-[0.96] shadow-[0_10px_40px_-10px_rgba(0,0,0,0.5)] ${isListening
+                                        ? "bg-red-500/10 text-red-500 border border-red-500/20 shadow-[0_0_20px_rgba(239,68,68,0.15)]"
+                                        : "bg-primary text-white border border-white/10 shadow-[0_8px_30px_rgba(124,58,237,0.4),inset_0_1px_0_rgba(255,255,255,0.2)] hover:bg-primary-hover hover:shadow-[0_10px_40px_rgba(124,58,237,0.5),inset_0_1px_0_rgba(255,255,255,0.3)]"
+                                        }`}
                                 >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isListening ? "scale-110 transition-transform animate-pulse" : "transition-transform"}><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" x2="12" y1="19" y2="22" /></svg>
-                                </Button>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={isListening ? "scale-110 transition-transform animate-pulse text-red-500" : "transition-transform"}>
+                                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                                        <line x1="12" x2="12" y1="19" y2="22" />
+                                    </svg>
+                                </button>
 
-                                <span className="text-sm font-medium text-text-secondary/80 tracking-wide mt-2">
-                                    {isListening ? "Ouvindo..." : "Toque no botão para falar"}
-                                </span>
-
-                                <button onClick={() => setIsTypingMode(true)} className="text-text-secondary hover:text-white transition-colors text-xs font-semibold uppercase tracking-widest flex items-center gap-2 py-2 px-5 rounded-full hover:bg-white/5 mt-2">
+                                <button
+                                    onClick={() => setIsTypingMode(true)}
+                                    className="text-text-secondary hover:text-white transition-colors text-[11px] uppercase tracking-widest font-bold flex items-center gap-1.5 py-2 px-5 rounded-full hover:bg-white/5 border border-transparent hover:border-white/10 backdrop-blur-sm"
+                                >
                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7V4h16v3" /><path d="M9 20h6" /><path d="M12 4v16" /></svg>
-                                    Digitar resposta
+                                    DIGITAR RESPOSTA
                                 </button>
 
                                 {recognitionError && (
@@ -390,19 +395,19 @@ export default function Demo() {
                                 )}
                             </div>
                         ) : (
-                            <div className="flex flex-col gap-4 w-full animate-in fade-in slide-in-from-bottom-2">
+                            <div className="flex flex-col gap-3 w-full max-w-lg mx-auto animate-in fade-in slide-in-from-bottom-2 bg-[#1A1F2B]/95 backdrop-blur-md p-4 rounded-[24px] border border-white/5 shadow-[0_20px_40px_-20px_rgba(0,0,0,0.8)]">
                                 <form onSubmit={handleSendMessage} className="flex gap-3 relative w-full">
                                     <Input
                                         placeholder="Digite sua resposta em inglês..."
                                         value={inputValue}
                                         onChange={(e) => setInputValue(e.target.value)}
-                                        className="flex-1 bg-white/5 border-white/10 text-white rounded-xl h-14 placeholder:text-white/30"
+                                        className="flex-1 rounded-xl bg-black/20 border-white/10 focus:border-primary/50 text-[15px] placeholder:text-white/30"
                                         autoFocus
                                     />
                                     <Button
                                         type="submit"
                                         variant="primary"
-                                        className="w-auto px-8 rounded-xl shrink-0 flex items-center justify-center h-14"
+                                        className="px-6 rounded-xl shrink-0 flex items-center justify-center min-w-[100px]"
                                         disabled={!inputValue.trim() || isEvaluating}
                                     >
                                         {isEvaluating ? (
@@ -412,9 +417,9 @@ export default function Demo() {
                                         )}
                                     </Button>
                                 </form>
-                                <button onClick={() => setIsTypingMode(false)} className="text-text-secondary hover:text-white transition-colors text-xs font-semibold uppercase tracking-widest self-center flex items-center gap-2 py-2 px-4 rounded-full hover:bg-white/5">
+                                <button onClick={() => setIsTypingMode(false)} className="text-text-secondary hover:text-white transition-colors text-[11px] uppercase tracking-widest font-bold self-center flex items-center gap-2 py-2 px-4 rounded-full hover:bg-white/5 border border-transparent hover:border-white/10">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" x2="12" y1="19" y2="22" /></svg>
-                                    Voltar para voz
+                                    VOLTAR PARA FALA
                                 </button>
                             </div>
                         )}

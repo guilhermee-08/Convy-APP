@@ -1553,33 +1553,30 @@ function PracticeContent() {
 
                 {/* Input Area */}
                 {!isConversationEnded && !showFullReview && finalLoadingState === 'idle' && (
-                    <div className="w-full shrink-0 sticky bottom-8 z-20 mt-4 pb-4">
+                    <div className="w-full shrink-0 sticky bottom-6 z-20 mt-4 pb-2">
                         {!isTypingMode ? (
-                            <div className="flex flex-col items-center gap-4 w-full animate-in fade-in slide-in-from-bottom-2">
+                            <div className="flex flex-col items-center gap-3 w-full animate-in fade-in slide-in-from-bottom-2">
                                 <button
                                     type="button"
                                     onClick={toggleListening}
-                                    className={`w-28 h-28 rounded-[32px] flex flex-col items-center justify-center gap-2 transition-all duration-300 active:scale-[0.96] shadow-[0_10px_40px_-10px_rgba(0,0,0,0.5)] ${isListening
-                                        ? "bg-red-500/10 text-red-400 border border-red-500/20 shadow-[0_0_20px_rgba(239,68,68,0.15)]"
+                                    className={`w-[84px] h-[84px] rounded-[24px] flex items-center justify-center transition-all duration-300 active:scale-[0.96] shadow-[0_10px_40px_-10px_rgba(0,0,0,0.5)] ${isListening
+                                        ? "bg-red-500/10 text-red-500 border border-red-500/20 shadow-[0_0_20px_rgba(239,68,68,0.15)]"
                                         : "bg-primary text-white border border-white/10 shadow-[0_8px_30px_rgba(124,58,237,0.4),inset_0_1px_0_rgba(255,255,255,0.2)] hover:bg-primary-hover hover:shadow-[0_10px_40px_rgba(124,58,237,0.5),inset_0_1px_0_rgba(255,255,255,0.3)]"
                                         }`}
                                 >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={isListening ? "scale-110 transition-transform animate-pulse text-red-500" : "transition-transform"}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={isListening ? "scale-110 transition-transform animate-pulse text-red-500" : "transition-transform"}>
                                         <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
                                         <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
                                         <line x1="12" x2="12" y1="19" y2="22" />
                                     </svg>
-                                    <span className="text-[13px] font-bold tracking-wide opacity-90 mt-1">
-                                        {isListening ? "OUVINDO..." : "FALAR"}
-                                    </span>
                                 </button>
 
                                 <button
                                     onClick={() => setIsTypingMode(true)}
-                                    className="text-text-secondary hover:text-white transition-colors text-xs font-semibold flex items-center gap-1.5 py-2 px-5 rounded-full hover:bg-white/5 mt-1 border border-transparent hover:border-white/10 backdrop-blur-sm"
+                                    className="text-text-secondary hover:text-white transition-colors text-[11px] uppercase tracking-widest font-bold flex items-center gap-1.5 py-2 px-5 rounded-full hover:bg-white/5 border border-transparent hover:border-white/10 backdrop-blur-sm"
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7V4h16v3" /><path d="M9 20h6" /><path d="M12 4v16" /></svg>
-                                    Digitar resposta
+                                    DIGITAR RESPOSTA
                                 </button>
                             </div>
                         ) : (
