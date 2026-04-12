@@ -1230,24 +1230,24 @@ function PracticeContent() {
             <div className="w-full max-w-2xl flex flex-col relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 {/* Header & Progress */}
                 <div className="text-center space-y-4 mb-4 shrink-0 mt-2 md:mt-6">
-                    <div className="flex justify-center mb-1 animate-in fade-in zoom-in duration-500">
-                        <div className={`px-2.5 py-0.5 rounded-sm text-[10px] font-bold tracking-widest uppercase border ${isPremium ? 'bg-orange-500/10 text-orange-400 border-orange-500/30 shadow-[0_0_10px_rgba(249,115,22,0.1)]' : 'bg-card text-text-secondary border-border/50'}`}>
+                    <div className="flex justify-center mb-4 animate-in fade-in zoom-in duration-500">
+                        <div className={`px-3 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase border flex items-center gap-1.5 ${isPremium ? 'bg-orange-500/5 text-orange-400 border-orange-500/20' : 'bg-white/5 text-text-secondary border-white/5'}`}>
                             {isPremium ? '🔥 Premium' : '🌱 Plano Free'}
                         </div>
                     </div>
-                    <h1 className="text-3xl font-extrabold tracking-tight text-text-main drop-shadow-sm -mt-2">
+                    <h1 className="text-3xl font-black tracking-tight text-white mb-2">
                         Prática de conversa
                     </h1>
-                    <div className="w-full max-w-md mx-auto space-y-2">
-                        <div className="h-2 w-full bg-card border border-white/5 rounded-full overflow-hidden">
+                    <div className="w-full max-w-sm mx-auto flex items-center gap-4 pt-4 pb-2">
+                        <div className="h-1.5 flex-1 bg-white/5 rounded-full overflow-hidden relative">
                             <div
-                                className="h-full bg-primary transition-all duration-500 ease-out rounded-full"
+                                className="absolute left-0 top-0 h-full bg-primary transition-all duration-500 ease-out rounded-full shadow-[0_0_10px_rgba(124,58,237,0.4)]"
                                 style={{ width: `${Math.max(5, ((currentStep + 1) / (conversationSteps.length || 1)) * 100)}%` }}
                             />
                         </div>
-                        <p className="text-sm font-medium text-text-secondary">
-                            {currentStep + 1} / {conversationSteps.length || 1}
-                        </p>
+                        <span className="text-[11px] font-bold tracking-widest text-text-secondary shrink-0">
+                            {currentStep + 1} DE {conversationSteps.length || 1}
+                        </span>
                     </div>
                 </div>
 
@@ -1259,11 +1259,11 @@ function PracticeContent() {
                             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                         >
                             <div
-                                className={`max-w-[80%] rounded-2xl px-5 py-3 shadow-sm flex flex-col gap-1.5 ${msg.role === 'user'
-                                    ? 'bg-primary text-white rounded-br-sm'
+                                className={`max-w-[85%] rounded-[20px] px-5 py-4 flex flex-col gap-1.5 text-[15px] shadow-sm ${msg.role === 'user'
+                                    ? 'bg-primary text-white rounded-br-sm shadow-[inset_0_1px_1px_rgba(255,255,255,0.15)]'
                                     : msg.role === 'help'
-                                        ? 'bg-amber-500/10 border border-amber-500/20 text-text-main text-sm'
-                                        : 'bg-card border border-border text-text-main rounded-bl-sm'
+                                        ? 'bg-[#1E2433] border border-white/5 text-text-main text-sm shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]'
+                                        : 'bg-[#1E2433] border border-white/5 text-white rounded-bl-sm shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]'
                                     }`}
                             >
                                 <div className="flex items-center gap-2">
@@ -1394,16 +1394,16 @@ function PracticeContent() {
                             </div>
 
                             <div className="space-y-1">
-                                <h2 className="text-2xl font-black text-text-main tracking-tight">Conversa finalizada!</h2>
-                                <p className="text-sm text-text-secondary">Você mandou muito bem.</p>
+                                <h2 className="text-2xl font-bold text-white tracking-tight">Conversa finalizada!</h2>
+                                <p className="text-sm text-text-secondary font-medium">Você mandou muito bem.</p>
                             </div>
 
-                            <div className="bg-background/80 px-6 py-4 rounded-2xl border border-border/50 shadow-inner w-full mb-2 flex flex-col items-center">
-                                <span className="text-text-secondary text-sm font-semibold uppercase tracking-wider block mb-1">Média final</span>
-                                <span className="text-primary font-black text-4xl">
-                                    {scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0}/10
+                            <div className="bg-[#1A1F2B] px-6 py-5 rounded-2xl border border-white/5 shadow-[inset_0_1px_1px_rgba(255,255,255,0.02)] w-full mb-2 flex flex-col items-center">
+                                <span className="text-text-secondary text-xs font-bold uppercase tracking-widest block mb-1">Média final</span>
+                                <span className="text-white font-black text-5xl">
+                                    {scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0}<span className="text-2xl text-text-secondary">/10</span>
                                 </span>
-                                <span className="text-sm font-medium text-text-main text-center block mt-2">
+                                <span className="text-sm font-medium text-text-main text-center block mt-3">
                                     {scores.length > 0 && Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) >= 7 ? "Bom! Você já se comunica 👍" : "Continue praticando, você está no caminho! 💪"}
                                 </span>
                             </div>
@@ -1538,8 +1538,8 @@ function PracticeContent() {
                             );
                         })}
 
-                        <div className="flex flex-col pt-8 mt-6 border-t border-border/50 space-y-6">
-                            <Button variant="primary" onClick={handleFinishReview} className="w-full py-4 rounded-xl text-base font-semibold shadow-lg">
+                        <div className="flex flex-col pt-8 mt-6 border-t border-white/5 space-y-6">
+                            <Button variant="primary" onClick={handleFinishReview} className="w-full text-base">
                                 Praticar novamente 🔁
                             </Button>
                             <p className="text-sm font-medium text-text-secondary text-center flex items-center justify-center gap-1.5">
@@ -1553,17 +1553,17 @@ function PracticeContent() {
 
                 {/* Input Area */}
                 {!isConversationEnded && !showFullReview && finalLoadingState === 'idle' && (
-                    <div className="pt-4 border-t border-border/30 space-y-4 shrink-0 mb-2">
-
-                        {!isTypingMode ? (
-                            <div className="flex flex-col items-center gap-3 w-full animate-in fade-in slide-in-from-bottom-2 pt-2">
+                    <div className="w-full shrink-0 sticky bottom-4 z-20 mt-4">
+                        <Card className="px-6 py-8 border-white/10 shadow-[0_-20px_60px_-20px_rgba(0,0,0,0.8)] backdrop-blur-md bg-[#161B26]/95">
+                            {!isTypingMode ? (
+                                <div className="flex flex-col items-center gap-5 w-full animate-in fade-in slide-in-from-bottom-2">
                                 <Button
                                     type="button"
                                     onClick={toggleListening}
                                     variant="secondary"
-                                    className={`w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300 shadow-lg ${isListening
-                                        ? "bg-red-500/20 text-red-500 border-red-500/50 hover:bg-red-500/30 animate-pulse shadow-[0_0_25px_rgba(239,68,68,0.25)] scale-105"
-                                        : "bg-primary text-white border-primary/50 hover:bg-primary/90 shadow-[0_0_15px_rgba(var(--primary),0.3)] hover:scale-105"
+                                    className={`w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300 ${isListening
+                                        ? "bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 animate-pulse scale-105 shadow-[0_0_20px_rgba(239,68,68,0.15)]"
+                                        : "bg-primary text-white shadow-[0_4px_14px_rgba(124,58,237,0.4)] hover:bg-primary-hover hover:scale-105"
                                         }`}
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isListening ? "scale-110 transition-transform" : "transition-transform"}>
@@ -1630,6 +1630,7 @@ function PracticeContent() {
                                 Reconhecimento de voz não disponível neste navegador.
                             </p>
                         )}
+                        </Card>
                     </div>
                 )}
             </div>

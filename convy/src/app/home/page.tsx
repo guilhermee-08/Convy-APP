@@ -179,10 +179,10 @@ export default function Home() {
                             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
                         </svg>
                     </button>
-                    <h1 className="text-4xl font-extrabold tracking-tight text-text-main drop-shadow-sm">
+                    <h1 className="text-4xl font-black tracking-tight text-white">
                         Dashboard
                     </h1>
-                    <p className="text-lg text-text-secondary leading-relaxed">
+                    <p className="text-[16px] font-medium text-text-secondary leading-relaxed max-w-sm mx-auto">
                         {!isLoading && !canPractice
                             ? "Você já completou sua prática gratuita de hoje."
                             : "Acompanhe seu progresso e continue praticando:"}
@@ -222,15 +222,15 @@ export default function Home() {
                 )}
 
                 {/* Daily Mission Progress Indicator */}
-                <Card className="w-full p-5 border-white/5 bg-card/60 relative overflow-hidden group shadow-md hover:shadow-lg transition-all duration-300">
+                <Card className="w-full relative group">
                     <div className="flex flex-col gap-5 relative z-10">
                         {/* Header & Rewards */}
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
                             <div className="space-y-1">
-                                <h3 className="text-lg font-bold text-text-main flex items-center gap-2">
-                                    🔥 Missão de hoje
+                                <h3 className="text-base font-bold text-text-main flex items-center gap-2">
+                                    Missão do dia
                                 </h3>
-                                <p className="text-sm text-text-secondary">
+                                <p className="text-xs text-text-secondary">
                                     Complete 2 conversas
                                 </p>
                             </div>
@@ -275,16 +275,13 @@ export default function Home() {
 
                 {/* Section 2: Daily Challenge */}
                 <div className="space-y-4 pt-4">
-                    <h2 className="text-2xl font-bold text-text-main pl-2 border-l-4 border-primary">
-                        🔥 Daily Challenge
+                    <h2 className="text-xl font-semibold text-text-main">
+                        Desafio de hoje
                     </h2>
 
                     {!isLoading && dailyChallenge && (
-                        <Card className="w-full relative overflow-hidden border-orange-500/30 bg-orange-500/5 group">
-                            {/* Subtle animated background gradient */}
-                            <div className="absolute inset-0 bg-gradient-to-br from-orange-500/10 to-transparent opacity-50"></div>
-
-                            <div className="p-6 relative z-10 flex flex-col md:flex-row gap-6 md:items-center justify-between">
+                        <Card className="w-full relative overflow-hidden group">
+                            <div className="relative z-10 flex flex-col md:flex-row gap-6 md:items-center justify-between">
                                 <div className="space-y-2 flex-1">
                                     <div className="flex items-center gap-3">
                                         <h3 className="font-bold text-xl text-text-main">{dailyChallenge.title}</h3>
@@ -297,13 +294,13 @@ export default function Home() {
 
                                 <div className="shrink-0 pt-2 md:pt-0">
                                     {(!canPractice || profilePracticeCountToday >= 2) ? (
-                                        <div className="px-6 py-3 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 font-medium text-center shadow-sm">
-                                            Desafio de hoje concluído ✅
+                                        <div className="px-6 py-2 rounded-xl bg-white/5 border border-white/10 text-white/50 text-sm font-medium text-center">
+                                            Concluído ✅
                                         </div>
                                     ) : (
                                         <Button
-                                            variant="primary"
-                                            className="w-full md:w-auto px-8 py-6 rounded-xl bg-orange-500 hover:bg-orange-600 border-none shadow-[0_0_20px_rgba(249,115,22,0.3)] hover:shadow-[0_0_25px_rgba(249,115,22,0.5)] transition-all font-bold text-white text-lg"
+                                            variant="secondary"
+                                            className="w-full md:w-auto px-6 py-3 rounded-xl font-semibold text-sm"
                                             onClick={() => router.push(`/practice?situation_id=${dailyChallenge.id}`)}
                                         >
                                             Começar desafio
@@ -316,8 +313,8 @@ export default function Home() {
                 </div>
 
                 {/* Section 1: Seu progresso */}
-                <div className="space-y-4 pt-4">
-                    <Card className="w-full text-center p-8 space-y-6 border-white/5 bg-card/60">
+                <div className="space-y-4 pt-6">
+                    <Card className="w-full text-center space-y-6">
                         {!isLoading && (
                             <div className="flex flex-col md:flex-row items-center justify-center gap-8">
                                 <div className="w-full md:w-auto flex flex-col items-center">
@@ -346,10 +343,10 @@ export default function Home() {
                                 <div className="hidden md:block w-px h-24 bg-border/50"></div>
                                 <div className="w-full md:hidden h-px bg-border/50 my-2"></div>
                                 <div className="flex justify-center gap-8 w-full md:w-auto">
-                                    <div className="space-y-2 flex flex-col items-center justify-center p-4 bg-primary/5 rounded-2xl border border-primary/10 w-full md:w-auto min-w-[200px]">
-                                        <p className="text-sm font-bold text-text-secondary uppercase tracking-widest">Streak atual</p>
-                                        <p className="text-5xl font-black text-orange-400 flex items-center justify-center gap-2 drop-shadow-[0_0_15px_rgba(251,146,60,0.3)]">
-                                            🔥 {streak} <span className="text-xl font-medium text-text-secondary tracking-normal">dias</span>
+                                    <div className="space-y-2 flex flex-col items-center justify-center p-4 border border-white/5 rounded-2xl bg-[#1A1F2B] w-full md:w-auto min-w-[200px] shadow-[inset_0_1px_1px_rgba(255,255,255,0.02)]">
+                                        <p className="text-xs font-semibold text-text-secondary uppercase tracking-widest">Streak atual</p>
+                                        <p className="text-4xl font-bold text-white flex items-center justify-center gap-2">
+                                            🔥 {streak} <span className="text-lg font-medium text-text-secondary tracking-normal">dias</span>
                                         </p>
 
                                         <div className="mt-2 flex flex-col items-center gap-2">
@@ -402,9 +399,8 @@ export default function Home() {
                     </Card>
                 </div>
 
-                {/* Section 3: Escolha uma conversa */}
-                <div className="space-y-4 pt-4">
-                    <h2 className="text-2xl font-bold text-text-main pl-2 border-l-4 border-primary">
+                <div className="space-y-4 pt-6">
+                    <h2 className="text-xl font-bold tracking-tight text-white">
                         Escolha uma conversa
                     </h2>
 
@@ -418,7 +414,8 @@ export default function Home() {
                                 </div>
                             )}
 
-                            <Card className="w-full p-6 border-primary/20 bg-primary/5 flex flex-col md:flex-row gap-6 md:items-center justify-between">
+                            <Card className="w-full border-t-primary/20 flex flex-col md:flex-row gap-6 md:items-center justify-between relative overflow-hidden">
+                                <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent pointer-events-none"></div>
                                 <div className="space-y-2 flex-1">
                                     <div className="flex items-center gap-2">
                                         <h3 className="font-bold text-xl text-text-main">{recommendedSituation.title}</h3>
@@ -443,9 +440,8 @@ export default function Home() {
                         </div>
                     )}
 
-                    {/* Section 3: Outras conversas */}
-                    <div className="space-y-4">
-                        <h2 className="text-xl font-bold text-text-main pl-2 border-l-4 border-border">
+                    <div className="space-y-4 pt-4">
+                        <h2 className="text-xl font-bold tracking-tight text-white">
                             Outras conversas
                         </h2>
 
@@ -464,7 +460,7 @@ export default function Home() {
                                 {situations.map((scenario) => (
                                     <div key={scenario.id} className={!canPractice ? "opacity-50 pointer-events-none" : ""}>
                                         <Link href={`/practice?situation_id=${scenario.id}`} className="block h-full">
-                                            <Card className="h-full p-6 flex flex-col justify-between border-white/5 bg-card/60 hover:bg-card/80 transition-all hover:scale-[1.02] cursor-pointer">
+                                            <Card className="h-full flex flex-col justify-between hover:border-text-secondary/20 transition-all hover:-translate-y-1 cursor-pointer">
                                                 <div className="space-y-2">
                                                     <div className="flex items-center justify-between gap-2">
                                                         <h3 className="font-bold text-lg text-text-main">{scenario.title}</h3>
