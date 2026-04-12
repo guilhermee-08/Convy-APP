@@ -15,12 +15,12 @@
 }
 
 :root {
-  --background: #0F172A;
-  --cards: #1E293B;
-  --borders: #334155;
-  --primary: #6366F1;
-  --primary-hover: #4F46E5;
-  --text-main: #F1F5F9;
+  --background: #131720;
+  --cards: #1A1F2B;
+  --borders: #2A303F;
+  --primary: #7C3AED;
+  --primary-hover: #6D28D9;
+  --text-main: #F8FAFC;
   --text-secondary: #94A3B8;
 }
 
