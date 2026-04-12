@@ -49,15 +49,35 @@ type Message = {
 export default function Demo() {
     const router = useRouter();
 
+    const demoSteps = [
+        {
+            ai: "Welcome! What would you like?",
+            translation: "Bem-vindo! O que você gostaria?",
+            hint: "A coffee, please."
+        },
+        {
+            ai: "Hot or iced?",
+            translation: "Quente ou gelado?",
+            hint: "Iced, please."
+        },
+        {
+            ai: "Anything else?",
+            translation: "Mais alguma coisa?",
+            hint: "No, thanks."
+        }
+    ];
+
+    const [currentStep, setCurrentStep] = useState(0);
     const [practiceState, setPracticeState] = useState<"intro" | "question" | "success">("intro");
     const [messages, setMessages] = useState<Message[]>([
         {
             role: "ai",
-            content: "Hello! How are you doing today?",
-            translation: "Olá! Como está indo o seu dia?",
-            hint: "Você pode dizer: 'I am doing great!'"
+            content: demoSteps[0].ai,
+            translation: demoSteps[0].translation,
+            hint: demoSteps[0].hint
         }
     ]);
+    const [turnFeedbacks, setTurnFeedbacks] = useState<number[]>([]);
     const [inputValue, setInputValue] = useState("");
     const [isEvaluating, setIsEvaluating] = useState(false);
     const [practiceScore, setPracticeScore] = useState<number>(0);
@@ -161,33 +181,90 @@ export default function Demo() {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    question: messages[0].content, // Evaluate against the first AI question
+                    question: demoSteps[currentStep].ai,
                     userAnswer: userText
                 }),
             });
             const data = await res.json();
 
-            let finalScore = 10;
+            let score = 5; // default fallback protecting against overly punitive low defaults
             if (data?.score) {
                 const parsed = parseInt(data.score.split('/')[0]);
-                if (!isNaN(parsed)) finalScore = parsed;
+                if (!isNaN(parsed)) score = parsed;
             }
-            setPracticeScore(finalScore);
 
-            setTimeout(() => {
-                playSuccessSound();
-                setPracticeState("success");
-            }, 1000);
+            // Immediately attach grammar correction to the user message in chat!
+            setMessages(prev => {
+                const newMessages = [...prev];
+                const lastUserIndex = newMessages.findLastIndex(m => m.role === 'user');
+                if (lastUserIndex !== -1 && data?.correction && data.correction.trim().toLowerCase() !== userText.trim().toLowerCase()) {
+                    newMessages[lastUserIndex] = {
+                        ...newMessages[lastUserIndex],
+                        hint: `Correção sugerida: ${data.correction}`,
+                        showHint: true // Show immediately to prove value
+                    };
+                }
+                return newMessages;
+            });
+
+            const newTurnFeedbacks = [...turnFeedbacks, score];
+            setTurnFeedbacks(newTurnFeedbacks);
+
+            if (currentStep < demoSteps.length - 1) {
+                // Move to next step
+                setTimeout(() => {
+                    const nextStepIndex = currentStep + 1;
+                    setCurrentStep(nextStepIndex);
+                    setMessages(prev => [...prev, {
+                        role: "ai",
+                        content: demoSteps[nextStepIndex].ai,
+                        translation: demoSteps[nextStepIndex].translation,
+                        hint: demoSteps[nextStepIndex].hint
+                    }]);
+                    setIsEvaluating(false);
+                }, 1000);
+            } else {
+                // Finish sequence
+                const total = newTurnFeedbacks.reduce((a, b) => a + b, 0);
+                const avg = Math.round(total / newTurnFeedbacks.length);
+                setPracticeScore(avg);
+                
+                setTimeout(() => {
+                    playSuccessSound();
+                    setPracticeState("success");
+                }, 1500);
+            }
         } catch (error) {
             console.error(error);
-            setPracticeScore(10);
-            setTimeout(() => {
-                playSuccessSound();
-                setPracticeState("success");
-            }, 1000);
-        } finally {
-            setIsEvaluating(false);
+            const newTurnFeedbacks = [...turnFeedbacks, 8];
+            setTurnFeedbacks(newTurnFeedbacks);
+            
+            if (currentStep < demoSteps.length - 1) {
+                setTimeout(() => {
+                    const nextStepIndex = currentStep + 1;
+                    setCurrentStep(nextStepIndex);
+                    setMessages(prev => [...prev, {
+                        role: "ai",
+                        content: demoSteps[nextStepIndex].ai,
+                        translation: demoSteps[nextStepIndex].translation,
+                        hint: demoSteps[nextStepIndex].hint
+                    }]);
+                    setIsEvaluating(false);
+                }, 1000);
+            } else {
+                setPracticeScore(8);
+                setTimeout(() => {
+                    playSuccessSound();
+                    setPracticeState("success");
+                }, 1500);
+            }
         }
+    };
+
+    const getEncouragingMessage = (score: number) => {
+        if (score >= 9) return "Excelente! Você quase se passaria por nativo!";
+        if (score >= 7) return "Muito bem! Você conseguiu se virar nessa situação perfeitamente.";
+        return "Bom esforço! Com um pouco mais de prática, essa situação será fichinha.";
     };
 
     const handleSendMessage = (e: React.FormEvent) => {
@@ -442,7 +519,7 @@ export default function Demo() {
 
                         <div className="space-y-3 relative z-10 px-2">
                             <h2 className="text-2xl font-semibold text-white tracking-tight drop-shadow-sm leading-snug">
-                                Você conseguiu se virar nessa situação!
+                                {getEncouragingMessage(practiceScore)}
                             </h2>
                         </div>
 
